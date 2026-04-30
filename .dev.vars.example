@@ -1,0 +1,3 @@
+# Copy this to .dev.vars (git-ignored) and fill in your service role key
+# Get it from: https://supabase.com/dashboard/project/xvmpasymvtdghgobflgz/settings/api
+SUPABASE_SERVICE_KEY=your_service_role_key_here
