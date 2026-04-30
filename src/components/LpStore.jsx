@@ -48,20 +48,6 @@ function timeAgo(isoString) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function numInput(value, setter, { min = 0, step = "1", placeholder = "0" } = {}) {
-  return (
-    <input
-      type="number"
-      className={styles.numInput}
-      min={min}
-      step={step}
-      placeholder={placeholder}
-      value={value}
-      onChange={(e) => setter(Math.max(min, parseFloat(e.target.value) || 0))}
-    />
-  );
-}
-
 export default function LpStore() {
   const [corpId, setCorpId] = useState(ALL_CORPS[0].id);
   const [data, setData] = useState(null);
@@ -71,10 +57,36 @@ export default function LpStore() {
   const [sortDir, setSortDir] = useState("desc");
   const [search, setSearch] = useState("");
 
-  // Profit adjustment inputs
+  // Draft strings (what the user types) — applied on Calculate
+  const [draftLpPrice, setDraftLpPrice] = useState("0");
+  const [draftSalesTax, setDraftSalesTax] = useState("0");
+  const [draftMfgTax, setDraftMfgTax] = useState("0");
+
+  // Applied values used for computation
   const [lpPrice, setLpPrice] = useState(0);
   const [salesTax, setSalesTax] = useState(0);
   const [mfgTax, setMfgTax] = useState(0);
+
+  function handleCalculate() {
+    setLpPrice(Math.max(0, parseFloat(draftLpPrice) || 0));
+    setSalesTax(Math.max(0, parseFloat(draftSalesTax) || 0));
+    setMfgTax(Math.max(0, parseFloat(draftMfgTax) || 0));
+  }
+
+  function draftInput(value, setter) {
+    return (
+      <input
+        type="text"
+        inputMode="decimal"
+        className={styles.numInput}
+        value={value}
+        placeholder="0"
+        onChange={(e) => setter(e.target.value)}
+        onFocus={(e) => e.target.select()}
+        onKeyDown={(e) => { if (e.key === "Enter") handleCalculate(); }}
+      />
+    );
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -181,15 +193,19 @@ export default function LpStore() {
 
         <div className={styles.field}>
           <label className={styles.label}>LP PRICE (ISK/LP)</label>
-          {numInput(lpPrice, setLpPrice, { step: "1" })}
+          {draftInput(draftLpPrice, setDraftLpPrice)}
         </div>
         <div className={styles.field}>
           <label className={styles.label}>SALES TAX %</label>
-          {numInput(salesTax, setSalesTax, { step: "0.1" })}
+          {draftInput(draftSalesTax, setDraftSalesTax)}
         </div>
         <div className={styles.field}>
           <label className={styles.label}>MFG TAX %</label>
-          {numInput(mfgTax, setMfgTax, { step: "0.1" })}
+          {draftInput(draftMfgTax, setDraftMfgTax)}
+        </div>
+        <div className={styles.field}>
+          <label className={styles.label}>&nbsp;</label>
+          <button className={styles.calcBtn} onClick={handleCalculate}>CALCULATE</button>
         </div>
 
         <div className={styles.meta}>

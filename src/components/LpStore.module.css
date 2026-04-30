@@ -10,7 +10,7 @@
 .label {
   font-family: var(--font-mono);
   font-size: 10px;
-  color: var(--accent-dim);
+  color: var(--accent);
   letter-spacing: 0.12em;
 }
 
@@ -49,6 +49,24 @@
 .numInput::-webkit-inner-spin-button,
 .numInput::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .numInput[type=number] { -moz-appearance: textfield; }
+
+.calcBtn {
+  background: transparent;
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  padding: 8px 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.calcBtn:hover {
+  border-color: var(--accent);
+  color: var(--text-bright);
+}
 
 .divider {
   width: 1px;
@@ -118,7 +136,7 @@
 
 .unknown { opacity: 0.45; }
 .tdName { text-align: left; color: var(--text); max-width: 320px; }
-.tdNum { text-align: right; color: var(--text-dim); white-space: nowrap; }
+.tdNum { text-align: right; color: var(--text); white-space: nowrap; }
 
 .sell { color: var(--sell) !important; }
 .buy  { color: var(--buy)  !important; }
