@@ -1,10 +1,26 @@
 import React, { useEffect, useState, useMemo } from "react";
 import styles from "./LpStore.module.css";
 
-const CORPS = [
-  { id: 1000436, name: "Malakim Zealots", faction: "Angel Cartel" },
-  { id: 1000437, name: "Commando Guri", faction: "Guristas Pirates" },
+const CORP_GROUPS = [
+  {
+    label: "Main FW Militias",
+    corps: [
+      { id: 1000110, name: "24th Imperial Crusade", faction: "Amarr Empire" },
+      { id: 1000179, name: "Federal Defence Union", faction: "Gallente Federation" },
+      { id: 1000180, name: "State Protectorate", faction: "Caldari State" },
+      { id: 1000182, name: "Tribal Liberation Force", faction: "Minmatar Republic" },
+    ],
+  },
+  {
+    label: "Pirate FW",
+    corps: [
+      { id: 1000436, name: "Malakim Zealots", faction: "Angel Cartel" },
+      { id: 1000437, name: "Commando Guri", faction: "Guristas Pirates" },
+    ],
+  },
 ];
+
+const ALL_CORPS = CORP_GROUPS.flatMap((g) => g.corps);
 
 function fmt(v) {
   if (v === 0) return "—";
@@ -21,14 +37,44 @@ function fmtIskPerLp(v) {
   return v.toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
+function timeAgo(isoString) {
+  if (!isoString) return "–";
+  const diffMs = Date.now() - new Date(isoString).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function numInput(value, setter, { min = 0, step = "1", placeholder = "0" } = {}) {
+  return (
+    <input
+      type="number"
+      className={styles.numInput}
+      min={min}
+      step={step}
+      placeholder={placeholder}
+      value={value}
+      onChange={(e) => setter(Math.max(min, parseFloat(e.target.value) || 0))}
+    />
+  );
+}
+
 export default function LpStore() {
-  const [corpId, setCorpId] = useState(CORPS[0].id);
+  const [corpId, setCorpId] = useState(ALL_CORPS[0].id);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [sortKey, setSortKey] = useState("iskPerLpSell");
   const [sortDir, setSortDir] = useState("desc");
   const [search, setSearch] = useState("");
+
+  // Profit adjustment inputs
+  const [lpPrice, setLpPrice] = useState(0);
+  const [salesTax, setSalesTax] = useState(0);
+  const [mfgTax, setMfgTax] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,12 +103,34 @@ export default function LpStore() {
   }
   const arrow = (key) => (sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
-  const filtered = useMemo(() => {
+  // Apply profit adjustments on top of the raw API data.
+  // Overwrites profitSell/Buy and iskPerLp fields so sort/display stay consistent.
+  const adjustedOffers = useMemo(() => {
     if (!data?.offers) return [];
+    return data.offers.map((o) => {
+      const materialCost = o.inputCost - o.iskCost;
+      const adjMaterialCost = materialCost * (1 + mfgTax / 100);
+      const adjTotalCost = o.iskCost + adjMaterialCost + o.lpCost * lpPrice;
+      const adjRevenueSell = o.productSell * o.quantity * (1 - salesTax / 100);
+      const adjProfitSell = adjRevenueSell - adjTotalCost;
+      const adjProfitBuy = o.productBuy * o.quantity - adjTotalCost;
+      return {
+        ...o,
+        adjMaterialCost,
+        revenueSell: adjRevenueSell,
+        profitSell: adjProfitSell,
+        profitBuy: adjProfitBuy,
+        iskPerLpSell: o.lpCost > 0 ? adjProfitSell / o.lpCost : 0,
+        iskPerLpBuy: o.lpCost > 0 ? adjProfitBuy / o.lpCost : 0,
+      };
+    });
+  }, [data, lpPrice, salesTax, mfgTax]);
+
+  const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return data.offers;
-    return data.offers.filter((o) => o.name.toLowerCase().includes(q));
-  }, [data, search]);
+    if (!q) return adjustedOffers;
+    return adjustedOffers.filter((o) => o.name.toLowerCase().includes(q));
+  }, [adjustedOffers, search]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -87,10 +155,14 @@ export default function LpStore() {
             value={corpId}
             onChange={(e) => setCorpId(parseInt(e.target.value, 10))}
           >
-            {CORPS.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} — {c.faction}
-              </option>
+            {CORP_GROUPS.map((g) => (
+              <optgroup key={g.label} label={g.label}>
+                {g.corps.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} — {c.faction}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>
@@ -104,8 +176,33 @@ export default function LpStore() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+
+        <div className={styles.divider} />
+
+        <div className={styles.field}>
+          <label className={styles.label}>LP PRICE (ISK/LP)</label>
+          {numInput(lpPrice, setLpPrice, { step: "1" })}
+        </div>
+        <div className={styles.field}>
+          <label className={styles.label}>SALES TAX %</label>
+          {numInput(salesTax, setSalesTax, { step: "0.1" })}
+        </div>
+        <div className={styles.field}>
+          <label className={styles.label}>MFG TAX %</label>
+          {numInput(mfgTax, setMfgTax, { step: "0.1" })}
+        </div>
+
         <div className={styles.meta}>
-          {data && !loading && <span>{filtered.length} / {data.offers.length} offers</span>}
+          {data && !loading && (
+            <>
+              <div>{filtered.length} / {data.offers.length} offers</div>
+              {data.offersUpdatedAt && (
+                <div className={styles.cacheAge}>
+                  offers {timeAgo(data.offersUpdatedAt)} · prices {timeAgo(data.pricesUpdatedAt)}
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -121,7 +218,7 @@ export default function LpStore() {
                 <th className={styles.thNum} onClick={() => handleSort("quantity")}>QTY{arrow("quantity")}</th>
                 <th className={styles.thNum} onClick={() => handleSort("lpCost")}>LP{arrow("lpCost")}</th>
                 <th className={styles.thNum} onClick={() => handleSort("iskCost")}>ISK COST{arrow("iskCost")}</th>
-                <th className={styles.thNum} onClick={() => handleSort("inputCost")}>INPUTS{arrow("inputCost")}</th>
+                <th className={styles.thNum} onClick={() => handleSort("adjMaterialCost")}>INPUTS{arrow("adjMaterialCost")}</th>
                 <th className={styles.thNum} onClick={() => handleSort("revenueSell")}>SELL VAL{arrow("revenueSell")}</th>
                 <th className={styles.thNum} onClick={() => handleSort("profitSell")}>PROFIT (SELL){arrow("profitSell")}</th>
                 <th className={`${styles.thNum} ${styles.thHighlight}`} onClick={() => handleSort("iskPerLpSell")}>
@@ -155,7 +252,7 @@ export default function LpStore() {
                   <td className={styles.tdNum}>{o.quantity.toLocaleString()}</td>
                   <td className={styles.tdNum}>{o.lpCost.toLocaleString()}</td>
                   <td className={styles.tdNum}>{fmt(o.iskCost)}</td>
-                  <td className={styles.tdNum}>{fmt(o.inputCost - o.iskCost)}</td>
+                  <td className={styles.tdNum}>{fmt(o.adjMaterialCost)}</td>
                   <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(o.revenueSell)}</td>
                   <td className={`${styles.tdNum} ${o.profitSell >= 0 ? styles.sell : styles.danger}`}>
                     {fmt(o.profitSell)}

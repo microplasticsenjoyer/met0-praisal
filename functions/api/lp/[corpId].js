@@ -22,9 +22,12 @@ export async function onRequestGet({ params, env }) {
 
     const db = getServiceClient(env);
 
-    const offers = await getOffers(db, corpId);
+    const { offers, updatedAt: offersUpdatedAt } = await getOffers(db, corpId);
     if (offers.length === 0) {
-      return new Response(JSON.stringify({ corpId, corp: LP_CORPS[corpId], offers: [] }), { headers });
+      return new Response(
+        JSON.stringify({ corpId, corp: LP_CORPS[corpId], offers: [], offersUpdatedAt, pricesUpdatedAt: null }),
+        { headers }
+      );
     }
 
     const typeIds = new Set();
@@ -36,7 +39,7 @@ export async function onRequestGet({ params, env }) {
 
     // Names first — price_cache has FK to item_cache(type_id).
     const nameMap = await resolveTypeNames(db, typeIdArr);
-    const priceMap = await getPrices(db, typeIdArr);
+    const { priceMap, updatedAt: pricesUpdatedAt } = await getPrices(db, typeIdArr);
 
     const enriched = offers.map((o) => {
       const product = priceMap[o.type_id] ?? null;
@@ -89,7 +92,10 @@ export async function onRequestGet({ params, env }) {
       };
     });
 
-    return new Response(JSON.stringify({ corpId, corp: LP_CORPS[corpId], offers: enriched }), { headers });
+    return new Response(
+      JSON.stringify({ corpId, corp: LP_CORPS[corpId], offers: enriched, offersUpdatedAt, pricesUpdatedAt }),
+      { headers }
+    );
   } catch (err) {
     console.error(err);
     return new Response(
@@ -99,6 +105,8 @@ export async function onRequestGet({ params, env }) {
   }
 }
 
+// ── Helpers ────────────────────────────────────────────────────────────────
+
 async function getOffers(db, corpId) {
   const { data: cached } = await db
     .from("lp_offers")
@@ -107,7 +115,13 @@ async function getOffers(db, corpId) {
 
   const now = Date.now();
   const fresh = (cached ?? []).filter((r) => now - new Date(r.updated_at).getTime() < OFFERS_TTL_MS);
-  if (fresh.length > 0) return fresh;
+  if (fresh.length > 0) {
+    const updatedAt = fresh.reduce(
+      (min, r) => (r.updated_at < min ? r.updated_at : min),
+      fresh[0].updated_at
+    );
+    return { offers: fresh, updatedAt };
+  }
 
   const res = await fetch(`${ESI_BASE}/loyalty/stores/${corpId}/offers/?datasource=tranquility`, {
     headers: { "User-Agent": "met0-praisal/0.1.0" },
@@ -115,6 +129,7 @@ async function getOffers(db, corpId) {
   if (!res.ok) throw new Error(`ESI loyalty store fetch failed: ${res.status}`);
   const offers = await res.json();
 
+  const updatedAt = new Date().toISOString();
   const rows = offers.map((o) => ({
     corporation_id: corpId,
     offer_id: o.offer_id,
@@ -124,13 +139,13 @@ async function getOffers(db, corpId) {
     lp_cost: o.lp_cost,
     ak_cost: o.ak_cost ?? 0,
     required_items: o.required_items ?? [],
-    updated_at: new Date().toISOString(),
+    updated_at: updatedAt,
   }));
 
   if (rows.length > 0) {
     await db.from("lp_offers").upsert(rows, { onConflict: "corporation_id,offer_id" });
   }
-  return rows;
+  return { offers: rows, updatedAt };
 }
 
 async function resolveTypeNames(db, typeIds) {
@@ -173,7 +188,8 @@ async function resolveTypeNames(db, typeIds) {
 }
 
 async function getPrices(db, typeIDs) {
-  if (typeIDs.length === 0) return {};
+  if (typeIDs.length === 0) return { priceMap: {}, updatedAt: null };
+
   const { data: cached } = await db
     .from("price_cache")
     .select("type_id, sell_min, sell_max, buy_min, buy_max, updated_at")
@@ -182,6 +198,7 @@ async function getPrices(db, typeIDs) {
   const priceMap = {};
   const stale = [];
   const now = Date.now();
+
   for (const row of cached ?? []) {
     if (now - new Date(row.updated_at).getTime() < PRICE_TTL_MS) {
       priceMap[row.type_id] = row;
@@ -189,9 +206,12 @@ async function getPrices(db, typeIDs) {
       stale.push(row.type_id);
     }
   }
+
   const missing = typeIDs.filter((id) => !(id in priceMap));
   const toFetch = [...new Set([...missing, ...stale])];
+
   if (toFetch.length > 0) {
+    const freshTimestamp = new Date().toISOString();
     const fresh = await fuzzworkPrices(toFetch);
     const upsertRows = [];
     for (const [idStr, data] of Object.entries(fresh)) {
@@ -202,7 +222,7 @@ async function getPrices(db, typeIDs) {
         sell_max: parseFloat(data.sell.max),
         buy_min: parseFloat(data.buy.min),
         buy_max: parseFloat(data.buy.max),
-        updated_at: new Date().toISOString(),
+        updated_at: freshTimestamp,
       };
       priceMap[typeID] = row;
       upsertRows.push(row);
@@ -211,7 +231,14 @@ async function getPrices(db, typeIDs) {
       await db.from("price_cache").upsert(upsertRows, { onConflict: "type_id" });
     }
   }
-  return priceMap;
+
+  // Return the oldest timestamp so the UI shows a conservative freshness indicator.
+  const updatedAt = Object.values(priceMap).reduce(
+    (min, r) => (!min || r.updated_at < min ? r.updated_at : min),
+    null
+  );
+
+  return { priceMap, updatedAt: updatedAt ?? new Date().toISOString() };
 }
 
 async function fuzzworkPrices(typeIDs) {

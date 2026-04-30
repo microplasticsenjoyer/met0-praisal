@@ -88,4 +88,4 @@ The app is an SPA. Query params drive state:
 
 Two places must be updated in sync:
 1. `functions/api/lp/_corps.js` — add to `LP_CORPS` object
-2. `src/components/LpStore.jsx` — add to the `CORPS` array at the top of the file
+2. `src/components/LpStore.jsx` — add to the correct group inside the `CORP_GROUPS` array at the top of the file
