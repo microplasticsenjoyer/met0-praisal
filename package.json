@@ -1,6 +1,6 @@
 {
   "name": "met0-praisal",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "EVE Online Jita 4-4 item appraiser — Cloudflare Workers + Supabase",
   "private": true,
   "type": "module",

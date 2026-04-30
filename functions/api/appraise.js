@@ -6,8 +6,8 @@ const ESI_BASE = "https://esi.evetech.net/latest";
 const FUZZWORK_BASE = "https://market.fuzzwork.co.uk/aggregates/";
 const JITA_STATION = 60003760;
 
-// Price cache TTL: 15 minutes
-const PRICE_TTL_MS = 15 * 60 * 1000;
+// Price cache TTL: 30 minutes
+const PRICE_TTL_MS = 30 * 60 * 1000;
 // Item cache TTL: 7 days (typeIDs don't change often)
 const ITEM_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
