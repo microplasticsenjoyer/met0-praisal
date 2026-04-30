@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import styles from "./LpStore.module.css";
+import Sparkline from "./Sparkline.jsx";
 
 const CORP_GROUPS = [
   {
@@ -48,9 +49,33 @@ function timeAgo(isoString) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+// Bucket a value (`v`) against a sorted reference array using a 4-tier scale.
+// Used to color SELL VOL relative to peers in the same corp's offer set.
+function volumeTier(v, sortedAll) {
+  if (v == null || sortedAll.length === 0) return null;
+  const n = sortedAll.length;
+  const idx = lowerBound(sortedAll, v);
+  const pct = idx / n;
+  if (pct < 0.25) return "low";
+  if (pct < 0.5) return "midLow";
+  if (pct < 0.75) return "midHigh";
+  return "high";
+}
+
+function lowerBound(arr, target) {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid] < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 export default function LpStore() {
   const [corpId, setCorpId] = useState(ALL_CORPS[0].id);
   const [data, setData] = useState(null);
+  const [history, setHistory] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [sortKey, setSortKey] = useState("iskPerLpSell");
@@ -67,6 +92,8 @@ export default function LpStore() {
   const [lpPrice, setLpPrice] = useState(0);
   const [salesTax, setSalesTax] = useState(0);
   const [mfgTax, setMfgTax] = useState(0);
+
+  const historyAbortRef = useRef(null);
 
   function handleCalculate() {
     setLpPrice(Math.max(0, parseFloat(draftLpPrice) || 0));
@@ -95,6 +122,7 @@ export default function LpStore() {
       setLoading(true);
       setError(null);
       setData(null);
+      setHistory({});
       try {
         const res = await fetch(`/api/lp/${corpId}`);
         const json = await res.json();
@@ -109,6 +137,28 @@ export default function LpStore() {
     load();
     return () => { cancelled = true; };
   }, [corpId]);
+
+  // Background fetch: 7-day volume history for every product type in the
+  // current offer set. Cancelled if the user switches corp before it returns.
+  useEffect(() => {
+    if (!data?.offers?.length) return;
+    const typeIds = [...new Set(data.offers.map((o) => o.typeID))];
+    const controller = new AbortController();
+    historyAbortRef.current?.abort();
+    historyAbortRef.current = controller;
+
+    fetch("/api/lp/history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ typeIds }),
+      signal: controller.signal,
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => { if (j?.history) setHistory(j.history); })
+      .catch(() => { /* aborted or network error — silent */ });
+
+    return () => controller.abort();
+  }, [data]);
 
   function handleSort(key) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -137,6 +187,14 @@ export default function LpStore() {
       };
     });
   }, [data, lpPrice, salesTax, mfgTax]);
+
+  // Sorted reference of all non-null sell volumes for color tiering.
+  const sortedVolumes = useMemo(() => {
+    return adjustedOffers
+      .map((o) => o.sellVolume)
+      .filter((v) => v != null && v > 0)
+      .sort((a, b) => a - b);
+  }, [adjustedOffers]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -215,19 +273,6 @@ export default function LpStore() {
             <button className={styles.calcBtn} onClick={handleCalculate}>CALCULATE</button>
           </div>
         </div>
-
-        <div className={styles.meta}>
-          {data && !loading && (
-            <>
-              <div>{filtered.length} / {data.offers.length} offers</div>
-              {data.offersUpdatedAt && (
-                <div className={styles.cacheAge}>
-                  offers {timeAgo(data.offersUpdatedAt)} · prices {timeAgo(data.pricesUpdatedAt)}
-                </div>
-              )}
-            </>
-          )}
-        </div>
       </div>
 
       {loading && <div className={styles.loading}>FETCHING LP STORE...</div>}
@@ -236,6 +281,14 @@ export default function LpStore() {
       {data && !loading && (
         <>
           <div className={styles.tableToolbar}>
+            <div className={styles.meta}>
+              <div>{filtered.length} / {data.offers.length} offers</div>
+              {data.offersUpdatedAt && (
+                <div className={styles.cacheAge}>
+                  offers {timeAgo(data.offersUpdatedAt)} · prices {timeAgo(data.pricesUpdatedAt)}
+                </div>
+              )}
+            </div>
             <button
               className={styles.toggleBtn}
               onClick={() => setAdvanced((a) => !a)}
@@ -253,57 +306,68 @@ export default function LpStore() {
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("iskCost")}>ISK COST{arrow("iskCost")}</th>}
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("adjMaterialCost")}>INPUTS{arrow("adjMaterialCost")}</th>}
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("sellVolume")}>SELL VOL{arrow("sellVolume")}</th>}
+                  <th className={styles.thNum}>7D VOL</th>
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("revenueSell")}>SELL VAL{arrow("revenueSell")}</th>}
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("profitSell")}>PROFIT (SELL){arrow("profitSell")}</th>}
                   <th className={`${styles.thNum} ${styles.thHighlight}`} onClick={() => handleSort("iskPerLpSell")}>
                     ISK/LP (SELL){arrow("iskPerLpSell")}
                   </th>
-                  {advanced && <th className={styles.thNum} onClick={() => handleSort("iskPerLpBuy")}>ISK/LP (BUY){arrow("iskPerLpBuy")}</th>}
+                  <th className={styles.thNum} onClick={() => handleSort("iskPerLpBuy")}>ISK/LP (BUY){arrow("iskPerLpBuy")}</th>
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((o) => (
-                  <tr key={o.offerId} className={o.unknown ? styles.unknown : ""}>
-                    <td className={styles.tdName}>
-                      <a
-                        href={`https://www.everef.net/type/${o.typeID}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={styles.link}
-                      >
-                        {o.name}
-                      </a>
-                      {o.inputs.length > 0 && (
-                        <div className={styles.inputs}>
-                          {o.inputs.map((i) => (
-                            <span key={i.typeID} className={styles.input}>
-                              {i.quantity}× {i.name}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </td>
-                    {advanced && <td className={styles.tdNum}>{o.quantity.toLocaleString()}</td>}
-                    <td className={styles.tdNum}>{o.lpCost.toLocaleString()}</td>
-                    {advanced && <td className={styles.tdNum}>{fmt(o.iskCost)}</td>}
-                    {advanced && <td className={styles.tdNum}>{fmt(o.adjMaterialCost)}</td>}
-                    {advanced && <td className={styles.tdNum}>{o.sellVolume != null ? fmt(o.sellVolume) : "—"}</td>}
-                    {advanced && <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(o.revenueSell)}</td>}
-                    {advanced && (
-                      <td className={`${styles.tdNum} ${o.profitSell >= 0 ? styles.sell : styles.danger}`}>
-                        {fmt(o.profitSell)}
+                {sorted.map((o) => {
+                  const tier = volumeTier(o.sellVolume, sortedVolumes);
+                  const volClass = tier ? styles[`vol_${tier}`] : "";
+                  const h = history[o.typeID];
+                  return (
+                    <tr key={o.offerId} className={o.unknown ? styles.unknown : ""}>
+                      <td className={styles.tdName}>
+                        <a
+                          href={`https://www.everef.net/type/${o.typeID}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={styles.link}
+                        >
+                          {o.name}
+                        </a>
+                        {o.inputs.length > 0 && (
+                          <div className={styles.inputs}>
+                            {o.inputs.map((i) => (
+                              <span key={i.typeID} className={styles.input}>
+                                {i.quantity}× {i.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </td>
-                    )}
-                    <td className={`${styles.tdNum} ${styles.highlight} ${o.iskPerLpSell >= 0 ? styles.sell : styles.danger}`}>
-                      {fmtIskPerLp(o.iskPerLpSell)}
-                    </td>
-                    {advanced && (
+                      {advanced && <td className={styles.tdNum}>{o.quantity.toLocaleString()}</td>}
+                      <td className={styles.tdNum}>{o.lpCost.toLocaleString()}</td>
+                      {advanced && <td className={styles.tdNum}>{fmt(o.iskCost)}</td>}
+                      {advanced && <td className={styles.tdNum}>{fmt(o.adjMaterialCost)}</td>}
+                      {advanced && (
+                        <td className={`${styles.tdNum} ${volClass}`}>
+                          {o.sellVolume != null ? fmt(o.sellVolume) : "—"}
+                        </td>
+                      )}
+                      <td className={styles.tdSpark}>
+                        <Sparkline values={h?.volume} />
+                      </td>
+                      {advanced && <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(o.revenueSell)}</td>}
+                      {advanced && (
+                        <td className={`${styles.tdNum} ${o.profitSell >= 0 ? styles.sell : styles.danger}`}>
+                          {fmt(o.profitSell)}
+                        </td>
+                      )}
+                      <td className={`${styles.tdNum} ${styles.highlight} ${o.iskPerLpSell >= 0 ? styles.sell : styles.danger}`}>
+                        {fmtIskPerLp(o.iskPerLpSell)}
+                      </td>
                       <td className={`${styles.tdNum} ${o.iskPerLpBuy >= 0 ? styles.buy : styles.danger}`}>
                         {fmtIskPerLp(o.iskPerLpBuy)}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
