@@ -2,7 +2,7 @@
 
 > EVE Online Jita 4-4 item appraiser — paste a cargo scan or item list, get live buy/sell prices instantly. Every appraisal gets a shareable link.
 
-**Stack: React + Vite → Cloudflare Pages · Cloudflare Pages Functions · Supabase (Postgres)**
+**Stack: React + Vite → Cloudflare Workers (Static Assets + Pages Functions compiled to `_worker.js`) · Supabase (Postgres)**
 
 ---
 
@@ -44,7 +44,7 @@ met0-praisal/
 │       └── 20260429_initial_schema.sql
 ├── index.html
 ├── vite.config.js
-├── wrangler.toml
+├── wrangler.jsonc
 └── package.json
 ```
 
@@ -72,41 +72,42 @@ cp .dev.vars.example .dev.vars
 # Get it from: https://supabase.com/dashboard/project/xvmpasymvtdghgobflgz/settings/api
 ```
 
-Build and run locally with Wrangler (runs both Vite + Pages Functions):
+Build and run locally (Vite client + compiled Pages Functions served by Workers Assets):
 
 ```bash
 npm run build
 npm run dev
 ```
 
-Visit `http://localhost:8788`.
+Wrangler will print the local URL (typically `http://localhost:8787`).
 
-## Deploying to Cloudflare Pages
+## Deploying to Cloudflare Workers
 
-### 1. Connect the repo
+This project is deployed as a **Cloudflare Worker with Static Assets** — the Vite-built client lives in `dist/` and the `functions/` directory is compiled into `dist/_worker.js/` by `wrangler pages functions build`.
 
-Go to [Cloudflare Dashboard → Workers & Pages → Create](https://dash.cloudflare.com/) and connect your GitHub repo `microplasticsenjoyer/met0-praisal`.
+### 1. Connect the repo (Workers Builds)
+
+Go to [Cloudflare Dashboard → Workers & Pages → Create](https://dash.cloudflare.com/) and connect your GitHub repo `microplasticsenjoyer/met0-praisal` as a **Worker** (Workers Builds).
 
 Build settings:
 | Setting | Value |
 |---|---|
-| Framework preset | None |
 | Build command | `npm run build` |
-| Build output directory | `dist` |
+| Deploy command | `npx wrangler deploy` *(default)* |
 
 ### 2. Set the service role secret
 
-In Cloudflare Pages → your project → **Settings → Environment Variables**, add:
+```bash
+npx wrangler secret put SUPABASE_SERVICE_KEY
+```
 
-| Variable | Value |
-|---|---|
-| `SUPABASE_SERVICE_KEY` | Your Supabase service role key (mark as **Secret**) |
+(Or in the dashboard → your Worker → **Settings → Variables and Secrets → Add → Secret**.)
 
-The `SUPABASE_URL` and `SUPABASE_ANON_KEY` are already set in `wrangler.toml`.
+The `SUPABASE_URL` and `SUPABASE_ANON_KEY` are already set in `wrangler.jsonc`.
 
 ### 3. Deploy
 
-Push to `main` — Cloudflare Pages auto-deploys on every push.
+Push to `main` — Workers Builds auto-deploys on every push.
 
 Or deploy manually:
 

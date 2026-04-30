@@ -1,14 +1,17 @@
 {
   "name": "met0-praisal",
   "version": "0.1.0",
-  "description": "EVE Online Jita 4-4 item appraiser — Cloudflare Pages + Supabase",
+  "description": "EVE Online Jita 4-4 item appraiser — Cloudflare Workers + Supabase",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler pages dev dist --compatibility-date=2024-01-01",
-    "build": "vite build",
-    "preview": "wrangler pages dev dist",
-    "deploy": "vite build && wrangler pages deploy dist"
+    "build:client": "vite build",
+    "build:functions": "wrangler pages functions build --outdir=./dist/_worker.js/",
+    "build:assetsignore": "node -e \"require('fs').copyFileSync('.assetsignore','dist/.assetsignore')\"",
+    "build": "npm run build:client && npm run build:functions && npm run build:assetsignore",
+    "dev": "wrangler dev",
+    "preview": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.4"
@@ -19,6 +22,6 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "vite": "^5.3.4",
-    "wrangler": "^3.60.3"
+    "wrangler": "^4.0.0"
   }
 }
