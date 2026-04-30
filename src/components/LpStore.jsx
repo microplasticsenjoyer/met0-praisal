@@ -56,6 +56,7 @@ export default function LpStore() {
   const [sortKey, setSortKey] = useState("iskPerLpSell");
   const [sortDir, setSortDir] = useState("desc");
   const [search, setSearch] = useState("");
+  const [advanced, setAdvanced] = useState(() => window.innerWidth >= 768);
 
   // Draft strings (what the user types) — applied on Calculate
   const [draftLpPrice, setDraftLpPrice] = useState("0");
@@ -116,7 +117,6 @@ export default function LpStore() {
   const arrow = (key) => (sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
   // Apply profit adjustments on top of the raw API data.
-  // Overwrites profitSell/Buy and iskPerLp fields so sort/display stay consistent.
   const adjustedOffers = useMemo(() => {
     if (!data?.offers) return [];
     return data.offers.map((o) => {
@@ -148,6 +148,10 @@ export default function LpStore() {
     const arr = [...filtered];
     arr.sort((a, b) => {
       let av = a[sortKey], bv = b[sortKey];
+      // Nulls always sink to the bottom regardless of sort direction
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
       if (typeof av === "string") av = av.toLowerCase();
       if (typeof bv === "string") bv = bv.toLowerCase();
       if (av < bv) return sortDir === "asc" ? -1 : 1;
@@ -160,52 +164,56 @@ export default function LpStore() {
   return (
     <>
       <div className={styles.controls}>
-        <div className={styles.field}>
-          <label className={styles.label}>CORPORATION</label>
-          <select
-            className={styles.select}
-            value={corpId}
-            onChange={(e) => setCorpId(parseInt(e.target.value, 10))}
-          >
-            {CORP_GROUPS.map((g) => (
-              <optgroup key={g.label} label={g.label}>
-                {g.corps.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} — {c.faction}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        </div>
-        <div className={styles.field}>
-          <label className={styles.label}>FILTER</label>
-          <input
-            className={styles.search}
-            type="text"
-            placeholder="search item name..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        {/* Group 1: corp selector + search filter */}
+        <div className={styles.selectorGroup}>
+          <div className={styles.field}>
+            <label className={styles.label}>CORPORATION</label>
+            <select
+              className={styles.select}
+              value={corpId}
+              onChange={(e) => setCorpId(parseInt(e.target.value, 10))}
+            >
+              {CORP_GROUPS.map((g) => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.corps.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} — {c.faction}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>FILTER</label>
+            <input
+              className={styles.search}
+              type="text"
+              placeholder="search item name..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
         </div>
 
-        <div className={styles.divider} />
-
-        <div className={styles.field}>
-          <label className={styles.label}>LP PRICE (ISK/LP)</label>
-          {draftInput(draftLpPrice, setDraftLpPrice)}
-        </div>
-        <div className={styles.field}>
-          <label className={styles.label}>SALES TAX %</label>
-          {draftInput(draftSalesTax, setDraftSalesTax)}
-        </div>
-        <div className={styles.field}>
-          <label className={styles.label}>MFG TAX %</label>
-          {draftInput(draftMfgTax, setDraftMfgTax)}
-        </div>
-        <div className={styles.field}>
-          <label className={styles.label}>&nbsp;</label>
-          <button className={styles.calcBtn} onClick={handleCalculate}>CALCULATE</button>
+        {/* Group 2: tax inputs + calculate (always on same line) */}
+        <div className={styles.taxGroup}>
+          <div className={styles.field}>
+            <label className={styles.label}>LP PRICE (ISK/LP)</label>
+            {draftInput(draftLpPrice, setDraftLpPrice)}
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>SALES TAX %</label>
+            {draftInput(draftSalesTax, setDraftSalesTax)}
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>MFG TAX %</label>
+            {draftInput(draftMfgTax, setDraftMfgTax)}
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>&nbsp;</label>
+            <button className={styles.calcBtn} onClick={handleCalculate}>CALCULATE</button>
+          </div>
         </div>
 
         <div className={styles.meta}>
@@ -226,64 +234,80 @@ export default function LpStore() {
       {error && <div className={styles.error}>⚠ {error}</div>}
 
       {data && !loading && (
-        <div className={styles.wrapper}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th className={styles.thName} onClick={() => handleSort("name")}>ITEM{arrow("name")}</th>
-                <th className={styles.thNum} onClick={() => handleSort("quantity")}>QTY{arrow("quantity")}</th>
-                <th className={styles.thNum} onClick={() => handleSort("lpCost")}>LP{arrow("lpCost")}</th>
-                <th className={styles.thNum} onClick={() => handleSort("iskCost")}>ISK COST{arrow("iskCost")}</th>
-                <th className={styles.thNum} onClick={() => handleSort("adjMaterialCost")}>INPUTS{arrow("adjMaterialCost")}</th>
-                <th className={styles.thNum} onClick={() => handleSort("revenueSell")}>SELL VAL{arrow("revenueSell")}</th>
-                <th className={styles.thNum} onClick={() => handleSort("profitSell")}>PROFIT (SELL){arrow("profitSell")}</th>
-                <th className={`${styles.thNum} ${styles.thHighlight}`} onClick={() => handleSort("iskPerLpSell")}>
-                  ISK/LP (SELL){arrow("iskPerLpSell")}
-                </th>
-                <th className={styles.thNum} onClick={() => handleSort("iskPerLpBuy")}>ISK/LP (BUY){arrow("iskPerLpBuy")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((o) => (
-                <tr key={o.offerId} className={o.unknown ? styles.unknown : ""}>
-                  <td className={styles.tdName}>
-                    <a
-                      href={`https://www.everef.net/type/${o.typeID}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={styles.link}
-                    >
-                      {o.name}
-                    </a>
-                    {o.inputs.length > 0 && (
-                      <div className={styles.inputs}>
-                        {o.inputs.map((i) => (
-                          <span key={i.typeID} className={styles.input}>
-                            {i.quantity}× {i.name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </td>
-                  <td className={styles.tdNum}>{o.quantity.toLocaleString()}</td>
-                  <td className={styles.tdNum}>{o.lpCost.toLocaleString()}</td>
-                  <td className={styles.tdNum}>{fmt(o.iskCost)}</td>
-                  <td className={styles.tdNum}>{fmt(o.adjMaterialCost)}</td>
-                  <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(o.revenueSell)}</td>
-                  <td className={`${styles.tdNum} ${o.profitSell >= 0 ? styles.sell : styles.danger}`}>
-                    {fmt(o.profitSell)}
-                  </td>
-                  <td className={`${styles.tdNum} ${styles.highlight} ${o.iskPerLpSell >= 0 ? styles.sell : styles.danger}`}>
-                    {fmtIskPerLp(o.iskPerLpSell)}
-                  </td>
-                  <td className={`${styles.tdNum} ${o.iskPerLpBuy >= 0 ? styles.buy : styles.danger}`}>
-                    {fmtIskPerLp(o.iskPerLpBuy)}
-                  </td>
+        <>
+          <div className={styles.tableToolbar}>
+            <button
+              className={styles.toggleBtn}
+              onClick={() => setAdvanced((a) => !a)}
+            >
+              {advanced ? "SIMPLIFIED" : "ADVANCED"}
+            </button>
+          </div>
+          <div className={styles.wrapper}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th className={styles.thName} onClick={() => handleSort("name")}>ITEM{arrow("name")}</th>
+                  {advanced && <th className={styles.thNum} onClick={() => handleSort("quantity")}>QTY{arrow("quantity")}</th>}
+                  <th className={styles.thNum} onClick={() => handleSort("lpCost")}>LP{arrow("lpCost")}</th>
+                  {advanced && <th className={styles.thNum} onClick={() => handleSort("iskCost")}>ISK COST{arrow("iskCost")}</th>}
+                  {advanced && <th className={styles.thNum} onClick={() => handleSort("adjMaterialCost")}>INPUTS{arrow("adjMaterialCost")}</th>}
+                  {advanced && <th className={styles.thNum} onClick={() => handleSort("sellVolume")}>SELL VOL{arrow("sellVolume")}</th>}
+                  {advanced && <th className={styles.thNum} onClick={() => handleSort("revenueSell")}>SELL VAL{arrow("revenueSell")}</th>}
+                  {advanced && <th className={styles.thNum} onClick={() => handleSort("profitSell")}>PROFIT (SELL){arrow("profitSell")}</th>}
+                  <th className={`${styles.thNum} ${styles.thHighlight}`} onClick={() => handleSort("iskPerLpSell")}>
+                    ISK/LP (SELL){arrow("iskPerLpSell")}
+                  </th>
+                  {advanced && <th className={styles.thNum} onClick={() => handleSort("iskPerLpBuy")}>ISK/LP (BUY){arrow("iskPerLpBuy")}</th>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {sorted.map((o) => (
+                  <tr key={o.offerId} className={o.unknown ? styles.unknown : ""}>
+                    <td className={styles.tdName}>
+                      <a
+                        href={`https://www.everef.net/type/${o.typeID}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={styles.link}
+                      >
+                        {o.name}
+                      </a>
+                      {o.inputs.length > 0 && (
+                        <div className={styles.inputs}>
+                          {o.inputs.map((i) => (
+                            <span key={i.typeID} className={styles.input}>
+                              {i.quantity}× {i.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    {advanced && <td className={styles.tdNum}>{o.quantity.toLocaleString()}</td>}
+                    <td className={styles.tdNum}>{o.lpCost.toLocaleString()}</td>
+                    {advanced && <td className={styles.tdNum}>{fmt(o.iskCost)}</td>}
+                    {advanced && <td className={styles.tdNum}>{fmt(o.adjMaterialCost)}</td>}
+                    {advanced && <td className={styles.tdNum}>{o.sellVolume != null ? fmt(o.sellVolume) : "—"}</td>}
+                    {advanced && <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(o.revenueSell)}</td>}
+                    {advanced && (
+                      <td className={`${styles.tdNum} ${o.profitSell >= 0 ? styles.sell : styles.danger}`}>
+                        {fmt(o.profitSell)}
+                      </td>
+                    )}
+                    <td className={`${styles.tdNum} ${styles.highlight} ${o.iskPerLpSell >= 0 ? styles.sell : styles.danger}`}>
+                      {fmtIskPerLp(o.iskPerLpSell)}
+                    </td>
+                    {advanced && (
+                      <td className={`${styles.tdNum} ${o.iskPerLpBuy >= 0 ? styles.buy : styles.danger}`}>
+                        {fmtIskPerLp(o.iskPerLpBuy)}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </>
   );

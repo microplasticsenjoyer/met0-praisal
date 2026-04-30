@@ -5,7 +5,7 @@ const ESI_BASE = "https://esi.evetech.net/latest";
 const FUZZWORK_BASE = "https://market.fuzzwork.co.uk/aggregates/";
 const JITA_STATION = 60003760;
 const OFFERS_TTL_MS = 24 * 60 * 60 * 1000; // 24h
-const PRICE_TTL_MS = 15 * 60 * 1000;
+const PRICE_TTL_MS = 30 * 60 * 1000;
 
 export async function onRequestGet({ params, env }) {
   const headers = {
@@ -88,6 +88,7 @@ export async function onRequestGet({ params, env }) {
         profitBuy,
         iskPerLpSell,
         iskPerLpBuy,
+        sellVolume: product ? (product.sell_volume ?? null) : null,
         unknown: !product || !inputsValid,
       };
     });
@@ -124,7 +125,7 @@ async function getOffers(db, corpId) {
   }
 
   const res = await fetch(`${ESI_BASE}/loyalty/stores/${corpId}/offers/?datasource=tranquility`, {
-    headers: { "User-Agent": "met0-praisal/0.1.0" },
+    headers: { "User-Agent": "met0-praisal/0.3.0" },
   });
   if (!res.ok) throw new Error(`ESI loyalty store fetch failed: ${res.status}`);
   const offers = await res.json();
@@ -163,7 +164,7 @@ async function resolveTypeNames(db, typeIds) {
   for (const c of chunks) {
     const res = await fetch(`${ESI_BASE}/universe/names/?datasource=tranquility`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "met0-praisal/0.1.0" },
+      headers: { "Content-Type": "application/json", "User-Agent": "met0-praisal/0.3.0" },
       body: JSON.stringify(c),
     });
     if (!res.ok) continue;
@@ -192,7 +193,7 @@ async function getPrices(db, typeIDs) {
 
   const { data: cached } = await db
     .from("price_cache")
-    .select("type_id, sell_min, sell_max, buy_min, buy_max, updated_at")
+    .select("type_id, sell_min, sell_max, buy_min, buy_max, sell_volume, updated_at")
     .in("type_id", typeIDs);
 
   const priceMap = {};
@@ -222,6 +223,7 @@ async function getPrices(db, typeIDs) {
         sell_max: parseFloat(data.sell.max),
         buy_min: parseFloat(data.buy.min),
         buy_max: parseFloat(data.buy.max),
+        sell_volume: parseInt(data.sell.volume, 10) || null,
         updated_at: freshTimestamp,
       };
       priceMap[typeID] = row;

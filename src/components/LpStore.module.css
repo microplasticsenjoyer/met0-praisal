@@ -3,6 +3,19 @@
   gap: 16px;
   align-items: flex-end;
   flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.selectorGroup {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.taxGroup {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
 }
 
 .field { display: flex; flex-direction: column; gap: 4px; }
@@ -68,14 +81,6 @@
   color: var(--text-bright);
 }
 
-.divider {
-  width: 1px;
-  background: var(--border);
-  align-self: stretch;
-  margin: 0 4px;
-  flex-shrink: 0;
-}
-
 .meta {
   margin-left: auto;
   font-family: var(--font-mono);
@@ -114,6 +119,30 @@
   font-size: 13px;
 }
 
+.tableToolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.toggleBtn {
+  background: transparent;
+  border: 1px solid var(--border-bright);
+  color: var(--text-dim);
+  padding: 6px 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.toggleBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .wrapper { border: 1px solid var(--border); overflow-x: auto; }
 
 .table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 13px; }
@@ -128,6 +157,7 @@
 .table th:hover { color: var(--accent); }
 
 .thName { text-align: left !important; }
+.thNum { text-align: right; }
 .thHighlight { color: var(--accent) !important; }
 
 .table td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -156,3 +186,26 @@
 }
 
 .input::before { content: "↳ "; opacity: 0.5; }
+
+/* ── Mobile (≤640px) ──────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .controls { gap: 10px; }
+
+  .selectorGroup { width: 100%; }
+  .select, .search { min-width: 0; width: 100%; }
+
+  .taxGroup { flex-wrap: wrap; gap: 8px; }
+  .numInput { width: 88px; }
+
+  .calcBtn { min-height: 44px; }
+  .toggleBtn { min-height: 44px; padding: 6px 18px; }
+
+  .meta { margin-left: 0; width: 100%; text-align: left; }
+}
+
+/* ── Desktop (≥768px) ─────────────────────────────────────────────────────── */
+@media (min-width: 768px) {
+  .table { font-size: 15px; }
+  .table th { font-size: 11px; }
+  .highlight { font-size: 16px; }
+}

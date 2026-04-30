@@ -112,7 +112,7 @@ export default function App() {
         {tab === "lp" && <LpStore />}
       </main>
       <footer className={styles.footer}>
-        <span>met0-praisal v0.1.0</span>
+        <span>met0-praisal v0.3.0</span>
         <span>·</span>
         <span>Prices: <a href="https://market.fuzzwork.co.uk/" target="_blank" rel="noopener noreferrer">Fuzzwork</a> · <a href="https://esi.evetech.net/" target="_blank" rel="noopener noreferrer">EVE ESI</a></span>
         <span>·</span>
