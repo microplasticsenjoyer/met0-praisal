@@ -1,17 +1,17 @@
 import React from "react";
 import styles from "./Sparkline.module.css";
 
-// Tiny inline-SVG volume sparkline. Color encodes the trend (linear-regression
-// slope across the window): green if rising, red if falling, neutral if flat.
+// Tiny inline-SVG sparkline. Color encodes the trend (linear-regression slope
+// across the window): green if rising, red if falling, neutral if flat. The
+// highest point in the window is marked with a green dot, the lowest with a
+// red dot, and the most-recent point with a filled dot in the trend color.
 //
-//   <Sparkline values={[0, 12, 7, 18, 22, 30, 28]} width={64} height={18} />
-export default function Sparkline({ values, width = 64, height = 18 }) {
+//   <Sparkline values={[1.10, 1.12, 1.15, 1.18]} width={72} height={20} />
+export default function Sparkline({ values, width = 72, height = 20, title }) {
   if (!values || values.length === 0) {
     return <span className={styles.empty}>—</span>;
   }
   if (values.length === 1) {
-    // Exactly one trade in the window — render a flat midline so the row
-    // visually reads as "active but sparse" rather than "no data".
     const y = height / 2;
     return (
       <svg
@@ -22,6 +22,7 @@ export default function Sparkline({ values, width = 64, height = 18 }) {
         preserveAspectRatio="none"
         aria-hidden="true"
       >
+        {title && <title>{title}</title>}
         <line x1="0" y1={y} x2={width} y2={y} stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
         <circle cx={width} cy={y} r="1.6" fill="currentColor" />
       </svg>
@@ -32,24 +33,21 @@ export default function Sparkline({ values, width = 64, height = 18 }) {
   const min = Math.min(...values);
   const range = max - min || 1;
   const stepX = width / (values.length - 1);
+  const yOf = (v) => height - 2 - ((v - min) / range) * (height - 4);
 
-  const points = values.map((v, i) => {
-    const x = i * stepX;
-    const y = height - 2 - ((v - min) / range) * (height - 4);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
+  const points = values.map((v, i) => `${(i * stepX).toFixed(1)},${yOf(v).toFixed(1)}`);
 
   const slope = linregSlope(values);
   const meanV = values.reduce((a, b) => a + b, 0) / values.length;
   const normalized = meanV > 0 ? slope / meanV : 0;
 
   let trendClass = styles.flat;
-  if (normalized > 0.05) trendClass = styles.up;
-  else if (normalized < -0.05) trendClass = styles.down;
+  if (normalized > 0.02) trendClass = styles.up;
+  else if (normalized < -0.02) trendClass = styles.down;
 
-  const last = values[values.length - 1];
-  const lastX = (values.length - 1) * stepX;
-  const lastY = height - 2 - ((last - min) / range) * (height - 4);
+  const lastIdx = values.length - 1;
+  const maxIdx = values.indexOf(max);
+  const minIdx = values.indexOf(min);
 
   return (
     <svg
@@ -60,6 +58,7 @@ export default function Sparkline({ values, width = 64, height = 18 }) {
       preserveAspectRatio="none"
       aria-hidden="true"
     >
+      {title && <title>{title}</title>}
       <polyline
         fill="none"
         stroke="currentColor"
@@ -68,7 +67,13 @@ export default function Sparkline({ values, width = 64, height = 18 }) {
         strokeLinejoin="round"
         points={points.join(" ")}
       />
-      <circle cx={lastX} cy={lastY} r="1.6" fill="currentColor" />
+      {max !== min && (
+        <>
+          <circle cx={maxIdx * stepX} cy={yOf(max)} r="1.8" className={styles.markHigh} />
+          <circle cx={minIdx * stepX} cy={yOf(min)} r="1.8" className={styles.markLow} />
+        </>
+      )}
+      <circle cx={lastIdx * stepX} cy={yOf(values[lastIdx])} r="1.6" fill="currentColor" />
     </svg>
   );
 }

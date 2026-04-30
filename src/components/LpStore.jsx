@@ -38,6 +38,17 @@ function fmtIskPerLp(v) {
   return v.toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
+function priceTrendTitle(values) {
+  if (!values || values.length < 2) return undefined;
+  const first = values[0];
+  const last = values[values.length - 1];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const pct = first > 0 ? ((last - first) / first) * 100 : 0;
+  const sign = pct >= 0 ? "+" : "";
+  return `${values.length}d price · ${sign}${pct.toFixed(1)}% · low ${fmt(min)} · high ${fmt(max)}`;
+}
+
 function timeAgo(isoString) {
   if (!isoString) return "–";
   const diffMs = Date.now() - new Date(isoString).getTime();
@@ -332,8 +343,16 @@ export default function LpStore() {
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("lpCost")}>LP{arrow("lpCost")}</th>}
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("iskCost")}>ISK COST{arrow("iskCost")}</th>}
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("adjMaterialCost")}>INPUTS{arrow("adjMaterialCost")}</th>}
-                  {advanced && <th className={styles.thNum} onClick={() => handleSort("sellVolume")}>SELL VOL{arrow("sellVolume")}</th>}
-                  <th className={styles.thNum}>30D VOL</th>
+                  {advanced && (
+                    <th
+                      className={styles.thNum}
+                      onClick={() => handleSort("sellVolume")}
+                      title="Total quantity currently listed on Jita 4-4 sell orders (market depth, not daily sales)"
+                    >
+                      ON MARKET{arrow("sellVolume")}
+                    </th>
+                  )}
+                  <th className={styles.thNum} title="30-day average daily price trend on The Forge (Jita region)">30D PRICE</th>
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("revenueSell")}>SELL VAL{arrow("revenueSell")}</th>}
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("profitSell")}>PROFIT (SELL){arrow("profitSell")}</th>}
                   <th className={`${styles.thNum} ${styles.thHighlight}`} onClick={() => handleSort("iskPerLpSell")}>
@@ -378,7 +397,10 @@ export default function LpStore() {
                         </td>
                       )}
                       <td className={styles.tdSpark}>
-                        <Sparkline values={h?.volume} />
+                        <Sparkline
+                          values={h?.avg}
+                          title={priceTrendTitle(h?.avg)}
+                        />
                       </td>
                       {advanced && <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(o.revenueSell)}</td>}
                       {advanced && (

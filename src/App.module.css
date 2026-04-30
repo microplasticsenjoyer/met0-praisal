@@ -11,6 +11,8 @@
   gap: 20px;
 }
 
+.mainWide { max-width: 1500px; }
+
 .loading {
   font-family: var(--font-mono);
   font-size: 13px;
