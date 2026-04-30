@@ -8,6 +8,9 @@
 .down { color: var(--danger); }
 .flat { color: var(--text-dim); }
 
+.markHigh { fill: var(--sell); }
+.markLow  { fill: var(--danger); }
+
 .empty {
   color: var(--text-dim);
   font-family: var(--font-mono);

@@ -85,7 +85,7 @@ export default function App() {
   return (
     <div className={styles.app}>
       <Header />
-      <main className={styles.main}>
+      <main className={`${styles.main} ${tab === "lp" ? styles.mainWide : ""}`}>
         <Tabs value={tab} onChange={handleTabChange} options={TAB_OPTIONS} />
         {tab === "appraise" && (
           loadingShared ? (
