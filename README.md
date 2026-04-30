@@ -8,6 +8,7 @@
 
 ## Features
 
+**Appraise tab**
 - Paste raw EVE item lists — cargo scan, contract, D-scan, or manual
 - Live Jita 4-4 buy (max) and sell (min) prices via [Fuzzwork](https://market.fuzzwork.co.uk/)
 - Item name resolution via [EVE ESI](https://esi.evetech.net/)
@@ -16,6 +17,14 @@
 - One-click shareable link with copy button
 - Sortable results table with per-item and total ISK breakdown
 - Unknown items flagged but don't break the appraisal
+
+**LP Store tab**
+- LP store profitability calculator for FW militia and pirate FW corporations (24th Imperial Crusade, Federal Defence Union, State Protectorate, Tribal Liberation Force, Malakim Zealots, Commando Guri)
+- Live offer data via [Fuzzwork LP](https://www.fuzzwork.co.uk/lp/) cached in Supabase (24h TTL)
+- Configurable LP price, sales tax %, and manufacturing tax % — apply via Calculate button
+- Per-offer ISK/LP for both sell-order and buy-order exit strategies
+- Filterable by item name; all columns sortable
+- Offers and prices show cache freshness age
 
 ## Project Structure
 
@@ -27,15 +36,20 @@ met0-praisal/
 │       ├── _parser.js            # Item list parser
 │       ├── _slug.js              # Slug generator
 │       ├── appraise.js           # POST /api/appraise
-│       └── appraisal/
-│           └── [slug].js         # GET /api/appraisal/:slug
+│       ├── appraisal/
+│       │   └── [slug].js         # GET /api/appraisal/:slug
+│       └── lp/
+│           ├── _corps.js         # Supported LP store corporations
+│           └── [corpId].js       # GET /api/lp/:corpId
 ├── src/
 │   ├── components/
 │   │   ├── Header.jsx
+│   │   ├── Tabs.jsx
 │   │   ├── PasteInput.jsx
 │   │   ├── ShareBar.jsx
 │   │   ├── Summary.jsx
-│   │   └── ResultsTable.jsx
+│   │   ├── ResultsTable.jsx
+│   │   └── LpStore.jsx
 │   ├── App.jsx
 │   ├── main.jsx
 │   └── index.css
@@ -129,6 +143,7 @@ npm run deploy
 | `price_cache` | Jita 4-4 buy/sell prices, 15-min TTL |
 | `appraisals` | Each paste submission with totals + slug |
 | `appraisal_items` | Line items per appraisal |
+| `lp_offers` | LP store offers per corporation, 24h TTL |
 
 RLS is enabled — anon key has read-only access, all writes use the service role key (server-side only).
 
@@ -158,7 +173,7 @@ Mexallon
 
 ## Version
 
-`0.1.0`
+`0.2.0`
 
 ## License
 
