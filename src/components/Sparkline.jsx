@@ -6,8 +6,26 @@ import styles from "./Sparkline.module.css";
 //
 //   <Sparkline values={[0, 12, 7, 18, 22, 30, 28]} width={64} height={18} />
 export default function Sparkline({ values, width = 64, height = 18 }) {
-  if (!values || values.length < 2) {
+  if (!values || values.length === 0) {
     return <span className={styles.empty}>—</span>;
+  }
+  if (values.length === 1) {
+    // Exactly one trade in the window — render a flat midline so the row
+    // visually reads as "active but sparse" rather than "no data".
+    const y = height / 2;
+    return (
+      <svg
+        className={`${styles.spark} ${styles.flat}`}
+        width={width}
+        height={height}
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <line x1="0" y1={y} x2={width} y2={y} stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        <circle cx={width} cy={y} r="1.6" fill="currentColor" />
+      </svg>
+    );
   }
 
   const max = Math.max(...values);

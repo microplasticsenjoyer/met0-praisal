@@ -62,6 +62,25 @@ function volumeTier(v, sortedAll) {
   return "high";
 }
 
+const STORAGE_PREFIX = "met0:lpStore:";
+function readStored(key) {
+  try {
+    return localStorage.getItem(STORAGE_PREFIX + key) ?? "0";
+  } catch {
+    return "0";
+  }
+}
+function parseStored(key) {
+  return Math.max(0, parseFloat(readStored(key)) || 0);
+}
+function writeStored(key, value) {
+  try {
+    localStorage.setItem(STORAGE_PREFIX + key, String(value ?? ""));
+  } catch {
+    /* storage unavailable — ignore */
+  }
+}
+
 function lowerBound(arr, target) {
   let lo = 0, hi = arr.length;
   while (lo < hi) {
@@ -83,22 +102,30 @@ export default function LpStore() {
   const [search, setSearch] = useState("");
   const [advanced, setAdvanced] = useState(() => window.innerWidth >= 768);
 
-  // Draft strings (what the user types) — applied on Calculate
-  const [draftLpPrice, setDraftLpPrice] = useState("0");
-  const [draftSalesTax, setDraftSalesTax] = useState("0");
-  const [draftMfgTax, setDraftMfgTax] = useState("0");
+  // Draft strings (what the user types) — applied on Calculate.
+  // Hydrated from localStorage so values survive a page refresh.
+  const [draftLpPrice, setDraftLpPrice] = useState(() => readStored("lpPrice"));
+  const [draftSalesTax, setDraftSalesTax] = useState(() => readStored("salesTax"));
+  const [draftMfgTax, setDraftMfgTax] = useState(() => readStored("mfgTax"));
 
-  // Applied values used for computation
-  const [lpPrice, setLpPrice] = useState(0);
-  const [salesTax, setSalesTax] = useState(0);
-  const [mfgTax, setMfgTax] = useState(0);
+  // Applied values used for computation. Initialised from the stored drafts so
+  // the table renders with the user's last-used inputs on first paint.
+  const [lpPrice, setLpPrice] = useState(() => parseStored("lpPrice"));
+  const [salesTax, setSalesTax] = useState(() => parseStored("salesTax"));
+  const [mfgTax, setMfgTax] = useState(() => parseStored("mfgTax"));
 
   const historyAbortRef = useRef(null);
 
   function handleCalculate() {
-    setLpPrice(Math.max(0, parseFloat(draftLpPrice) || 0));
-    setSalesTax(Math.max(0, parseFloat(draftSalesTax) || 0));
-    setMfgTax(Math.max(0, parseFloat(draftMfgTax) || 0));
+    const lp = Math.max(0, parseFloat(draftLpPrice) || 0);
+    const st = Math.max(0, parseFloat(draftSalesTax) || 0);
+    const mt = Math.max(0, parseFloat(draftMfgTax) || 0);
+    setLpPrice(lp);
+    setSalesTax(st);
+    setMfgTax(mt);
+    writeStored("lpPrice", draftLpPrice);
+    writeStored("salesTax", draftSalesTax);
+    writeStored("mfgTax", draftMfgTax);
   }
 
   function draftInput(value, setter) {
@@ -302,11 +329,11 @@ export default function LpStore() {
                 <tr>
                   <th className={styles.thName} onClick={() => handleSort("name")}>ITEM{arrow("name")}</th>
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("quantity")}>QTY{arrow("quantity")}</th>}
-                  <th className={styles.thNum} onClick={() => handleSort("lpCost")}>LP{arrow("lpCost")}</th>
+                  {advanced && <th className={styles.thNum} onClick={() => handleSort("lpCost")}>LP{arrow("lpCost")}</th>}
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("iskCost")}>ISK COST{arrow("iskCost")}</th>}
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("adjMaterialCost")}>INPUTS{arrow("adjMaterialCost")}</th>}
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("sellVolume")}>SELL VOL{arrow("sellVolume")}</th>}
-                  <th className={styles.thNum}>7D VOL</th>
+                  <th className={styles.thNum}>30D VOL</th>
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("revenueSell")}>SELL VAL{arrow("revenueSell")}</th>}
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("profitSell")}>PROFIT (SELL){arrow("profitSell")}</th>}
                   <th className={`${styles.thNum} ${styles.thHighlight}`} onClick={() => handleSort("iskPerLpSell")}>
@@ -342,7 +369,7 @@ export default function LpStore() {
                         )}
                       </td>
                       {advanced && <td className={styles.tdNum}>{o.quantity.toLocaleString()}</td>}
-                      <td className={styles.tdNum}>{o.lpCost.toLocaleString()}</td>
+                      {advanced && <td className={styles.tdNum}>{o.lpCost.toLocaleString()}</td>}
                       {advanced && <td className={styles.tdNum}>{fmt(o.iskCost)}</td>}
                       {advanced && <td className={styles.tdNum}>{fmt(o.adjMaterialCost)}</td>}
                       {advanced && (

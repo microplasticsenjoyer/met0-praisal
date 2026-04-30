@@ -91,7 +91,7 @@
 
 .cacheAge {
   font-size: 10px;
-  opacity: 0.6;
+  opacity: 0.85;
   margin-top: 3px;
   letter-spacing: 0.06em;
 }
@@ -145,12 +145,12 @@
 
 .wrapper { border: 1px solid var(--border); overflow-x: auto; }
 
-.table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 13px; }
+.table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 13px; font-weight: 500; }
 
 .table thead { background: rgba(0,0,0,0.3); position: sticky; top: 0; z-index: 1; }
 
 .table th {
-  padding: 9px 12px; text-align: right; font-size: 10px; letter-spacing: 0.1em;
+  padding: 9px 12px; text-align: right; font-size: 10px; font-weight: 400; letter-spacing: 0.1em;
   color: var(--text-dim); border-bottom: 1px solid var(--border);
   cursor: pointer; user-select: none; white-space: nowrap; transition: color 0.15s;
 }
@@ -162,7 +162,8 @@
 
 .table td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .table tbody tr:last-child td { border-bottom: none; }
-.table tbody tr:hover { background: rgba(0,200,255,0.03); }
+.table tbody tr:nth-child(even) { background: rgba(255,255,255,0.015); }
+.table tbody tr:hover { background: rgba(0,200,255,0.04); }
 
 .unknown { opacity: 0.45; }
 .tdName { text-align: left; color: var(--text); max-width: 320px; }
