@@ -22,7 +22,9 @@
 - LP store profitability calculator for FW militia and pirate FW corporations (24th Imperial Crusade, Federal Defence Union, State Protectorate, Tribal Liberation Force, Malakim Zealots, Commando Guri)
 - Live offer data via [Fuzzwork LP](https://www.fuzzwork.co.uk/lp/) cached in Supabase (24h TTL)
 - Configurable LP price, sales tax %, and manufacturing tax % — apply via Calculate button
-- Per-offer ISK/LP for both sell-order and buy-order exit strategies
+- Per-offer ISK/LP for both sell-order and buy-order exit strategies (visible in both simplified and advanced views)
+- 7-day Jita volume sparkline per item (ESI market history, 24h TTL) — green = rising, red = falling
+- SELL VOL color-tiered against peer offers (quartile bucketing) so spikes vs. baseline are visible at a glance
 - Filterable by item name; all columns sortable
 - Offers and prices show cache freshness age
 
@@ -40,7 +42,8 @@ met0-praisal/
 │       │   └── [slug].js         # GET /api/appraisal/:slug
 │       └── lp/
 │           ├── _corps.js         # Supported LP store corporations
-│           └── [corpId].js       # GET /api/lp/:corpId
+│           ├── [corpId].js       # GET /api/lp/:corpId
+│           └── history.js        # POST /api/lp/history (7-day volume cache)
 ├── src/
 │   ├── components/
 │   │   ├── Header.jsx
@@ -49,6 +52,7 @@ met0-praisal/
 │   │   ├── ShareBar.jsx
 │   │   ├── Summary.jsx
 │   │   ├── ResultsTable.jsx
+│   │   ├── Sparkline.jsx
 │   │   └── LpStore.jsx
 │   ├── App.jsx
 │   ├── main.jsx
@@ -144,6 +148,7 @@ npm run deploy
 | `appraisals` | Each paste submission with totals + slug |
 | `appraisal_items` | Line items per appraisal |
 | `lp_offers` | LP store offers per corporation, 24h TTL |
+| `market_history` | 7-day Jita volume + average per typeID, 24h TTL |
 
 RLS is enabled — anon key has read-only access, all writes use the service role key (server-side only).
 
@@ -173,7 +178,7 @@ Mexallon
 
 ## Version
 
-`0.2.0`
+`0.4.0`
 
 ## License
 

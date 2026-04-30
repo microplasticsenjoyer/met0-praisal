@@ -125,7 +125,7 @@ async function getOffers(db, corpId) {
   }
 
   const res = await fetch(`${ESI_BASE}/loyalty/stores/${corpId}/offers/?datasource=tranquility`, {
-    headers: { "User-Agent": "met0-praisal/0.3.0" },
+    headers: { "User-Agent": "met0-praisal/0.4.0" },
   });
   if (!res.ok) throw new Error(`ESI loyalty store fetch failed: ${res.status}`);
   const offers = await res.json();
@@ -164,7 +164,7 @@ async function resolveTypeNames(db, typeIds) {
   for (const c of chunks) {
     const res = await fetch(`${ESI_BASE}/universe/names/?datasource=tranquility`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "met0-praisal/0.3.0" },
+      headers: { "Content-Type": "application/json", "User-Agent": "met0-praisal/0.4.0" },
       body: JSON.stringify(c),
     });
     if (!res.ok) continue;

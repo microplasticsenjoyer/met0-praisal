@@ -112,13 +112,13 @@ export default function App() {
         {tab === "lp" && <LpStore />}
       </main>
       <footer className={styles.footer}>
-        <span>met0-praisal v0.3.0</span>
+        <span>met0-praisal v0.4.0</span>
         <span>·</span>
         <span>Prices: <a href="https://market.fuzzwork.co.uk/" target="_blank" rel="noopener noreferrer">Fuzzwork</a> · <a href="https://esi.evetech.net/" target="_blank" rel="noopener noreferrer">EVE ESI</a></span>
         <span>·</span>
         <span>Jita 4-4 only</span>
         <span>·</span>
-        <a href="https://github.com/microplasticsenjoyer/met0-praisal" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://auth.zuck.zone" target="_blank" rel="noopener noreferrer">auth.zuck.zone</a>
       </footer>
     </div>
   );

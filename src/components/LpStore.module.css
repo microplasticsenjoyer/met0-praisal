@@ -82,13 +82,11 @@
 }
 
 .meta {
-  margin-left: auto;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-dim);
   letter-spacing: 0.08em;
-  padding-bottom: 8px;
-  text-align: right;
+  text-align: left;
 }
 
 .cacheAge {
@@ -121,7 +119,9 @@
 
 .tableToolbar {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 8px;
 }
 
@@ -173,6 +173,19 @@
 .danger { color: var(--danger) !important; }
 .highlight { font-weight: bold; font-size: 14px; }
 
+/* SELL VOL color tiers — quartile bucketing within current corp's offers. */
+.vol_low     { color: var(--danger) !important; }
+.vol_midLow  { color: var(--buy) !important; }
+.vol_midHigh { color: var(--text) !important; }
+.vol_high    { color: var(--sell) !important; }
+
+.tdSpark {
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+  padding: 6px 8px !important;
+}
+
 .link { color: var(--text); text-decoration: none; transition: color 0.15s; }
 .link:hover { color: var(--accent); text-decoration: underline; }
 
@@ -198,9 +211,10 @@
   .numInput { width: 88px; }
 
   .calcBtn { min-height: 44px; }
-  .toggleBtn { min-height: 44px; padding: 6px 18px; }
+  .toggleBtn { min-height: 36px; padding: 6px 14px; }
 
-  .meta { margin-left: 0; width: 100%; text-align: left; }
+  .tableToolbar { flex-wrap: nowrap; }
+  .meta { flex: 1; min-width: 0; }
 }
 
 /* ── Desktop (≥768px) ─────────────────────────────────────────────────────── */

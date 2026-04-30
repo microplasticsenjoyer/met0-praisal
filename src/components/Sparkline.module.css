@@ -1,0 +1,16 @@
+.spark {
+  display: inline-block;
+  vertical-align: middle;
+  overflow: visible;
+}
+
+.up   { color: var(--sell); }
+.down { color: var(--danger); }
+.flat { color: var(--text-dim); }
+
+.empty {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.5;
+}
