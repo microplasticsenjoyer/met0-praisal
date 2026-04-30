@@ -12,10 +12,10 @@
   --buy: #ff9800;
   --buy-dim: #b26a00;
   --danger: #ff4444;
-  --text: #c8d8e4;
+  --text: #d6e2ec;
   --text-dim: #5a7a8a;
   --text-bright: #eaf4fc;
-  --font-mono: "Share Tech Mono", monospace;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --font-ui: "Rajdhani", sans-serif;
 }
 

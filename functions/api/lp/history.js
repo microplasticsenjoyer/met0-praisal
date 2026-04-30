@@ -12,7 +12,7 @@ import { getServiceClient } from "../_supabase.js";
 const ESI_BASE = "https://esi.evetech.net/latest";
 const THE_FORGE = 10000002;
 const HISTORY_TTL_MS = 24 * 60 * 60 * 1000;
-const HISTORY_DAYS = 7;
+const HISTORY_DAYS = 30;
 const FETCH_CONCURRENCY = 20;
 const MAX_TYPES_PER_REQUEST = 600;
 
