@@ -30,6 +30,34 @@
   border-color: var(--accent-dim);
 }
 
+.numInput {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  width: 120px;
+  transition: border-color 0.15s;
+}
+
+.numInput:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+
+.numInput::-webkit-inner-spin-button,
+.numInput::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.numInput[type=number] { -moz-appearance: textfield; }
+
+.divider {
+  width: 1px;
+  background: var(--border);
+  align-self: stretch;
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
 .meta {
   margin-left: auto;
   font-family: var(--font-mono);
@@ -37,6 +65,14 @@
   color: var(--text-dim);
   letter-spacing: 0.08em;
   padding-bottom: 8px;
+  text-align: right;
+}
+
+.cacheAge {
+  font-size: 10px;
+  opacity: 0.6;
+  margin-top: 3px;
+  letter-spacing: 0.06em;
 }
 
 .loading {
