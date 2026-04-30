@@ -61,7 +61,6 @@ function timeAgo(isoString) {
 }
 
 // Bucket a value (`v`) against a sorted reference array using a 4-tier scale.
-// Used to color SELL VOL relative to peers in the same corp's offer set.
 function volumeTier(v, sortedAll) {
   if (v == null || sortedAll.length === 0) return null;
   const n = sortedAll.length;
@@ -71,6 +70,14 @@ function volumeTier(v, sortedAll) {
   if (pct < 0.5) return "midLow";
   if (pct < 0.75) return "midHigh";
   return "high";
+}
+
+// Green = thin market (great flip), red = deeply saturated.
+function daysOfSupplyClass(days) {
+  if (days == null) return "";
+  if (days < 7) return styles.sell;
+  if (days > 30) return styles.danger;
+  return "";
 }
 
 const STORAGE_PREFIX = "met0:lpStore:";
@@ -108,19 +115,35 @@ export default function LpStore() {
   const [history, setHistory] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [sortKey, setSortKey] = useState("iskPerLpSell");
-  const [sortDir, setSortDir] = useState("desc");
+
+  // Sort state — persisted across page loads and corp switches.
+  const [sortKey, setSortKey] = useState(
+    () => localStorage.getItem(STORAGE_PREFIX + "sortKey") ?? "iskPerLpSell"
+  );
+  const [sortDir, setSortDir] = useState(
+    () => localStorage.getItem(STORAGE_PREFIX + "sortDir") ?? "desc"
+  );
+
   const [search, setSearch] = useState("");
-  const [advanced, setAdvanced] = useState(() => window.innerWidth >= 768);
+
+  // Advanced toggle — persisted to localStorage; falls back to viewport width.
+  const [advanced, setAdvanced] = useState(() => {
+    const s = localStorage.getItem(STORAGE_PREFIX + "advanced");
+    return s !== null ? s === "true" : window.innerWidth >= 768;
+  });
+
+  // Group-by-item: collapse duplicate products to best ISK/LP offer.
+  const [groupByItem, setGroupByItem] = useState(false);
+
+  // Copy-to-clipboard feedback: stores the offerId that was just copied.
+  const [copied, setCopied] = useState(null);
 
   // Draft strings (what the user types) — applied on Calculate.
-  // Hydrated from localStorage so values survive a page refresh.
   const [draftLpPrice, setDraftLpPrice] = useState(() => readStored("lpPrice"));
   const [draftSalesTax, setDraftSalesTax] = useState(() => readStored("salesTax"));
   const [draftMfgTax, setDraftMfgTax] = useState(() => readStored("mfgTax"));
 
-  // Applied values used for computation. Initialised from the stored drafts so
-  // the table renders with the user's last-used inputs on first paint.
+  // Applied values used for computation.
   const [lpPrice, setLpPrice] = useState(() => parseStored("lpPrice"));
   const [salesTax, setSalesTax] = useState(() => parseStored("salesTax"));
   const [mfgTax, setMfgTax] = useState(() => parseStored("mfgTax"));
@@ -176,8 +199,7 @@ export default function LpStore() {
     return () => { cancelled = true; };
   }, [corpId]);
 
-  // Background fetch: 7-day volume history for every product type in the
-  // current offer set. Cancelled if the user switches corp before it returns.
+  // Background fetch: 30-day volume + price history for every product type.
   useEffect(() => {
     if (!data?.offers?.length) return;
     const typeIds = [...new Set(data.offers.map((o) => o.typeID))];
@@ -199,12 +221,28 @@ export default function LpStore() {
   }, [data]);
 
   function handleSort(key) {
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(key); setSortDir("desc"); }
+    if (sortKey === key) {
+      const next = sortDir === "asc" ? "desc" : "asc";
+      setSortDir(next);
+      writeStored("sortDir", next);
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+      writeStored("sortKey", key);
+      writeStored("sortDir", "desc");
+    }
   }
+
+  function toggleAdvanced() {
+    setAdvanced((a) => {
+      writeStored("advanced", !a);
+      return !a;
+    });
+  }
+
   const arrow = (key) => (sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
-  // Apply profit adjustments on top of the raw API data.
+  // Step 1: apply profit adjustments on top of raw API data.
   const adjustedOffers = useMemo(() => {
     if (!data?.offers) return [];
     return data.offers.map((o) => {
@@ -226,25 +264,84 @@ export default function LpStore() {
     });
   }, [data, lpPrice, salesTax, mfgTax]);
 
-  // Sorted reference of all non-null sell volumes for color tiering.
+  // Step 2: merge history data — avgDailyVol, daysOfSupply, priceHistory.
+  const withHistory = useMemo(() => {
+    return adjustedOffers.map((o) => {
+      const h = history[o.typeID];
+      const vols = h?.volume?.filter((v) => v > 0) ?? [];
+      const avgDailyVol = vols.length > 0
+        ? Math.round(vols.reduce((s, v) => s + v, 0) / vols.length)
+        : null;
+      const daysOfSupply =
+        o.sellVolume != null && avgDailyVol != null && avgDailyVol > 0
+          ? Math.round(o.sellVolume / avgDailyVol)
+          : null;
+      return { ...o, avgDailyVol, daysOfSupply, priceHistory: h };
+    });
+  }, [adjustedOffers, history]);
+
+  // Step 3: collapse duplicate products to best-ISK/LP offer when grouping.
+  const offersForDisplay = useMemo(() => {
+    if (!groupByItem) return withHistory;
+    const counts = new Map();
+    for (const o of withHistory) counts.set(o.typeID, (counts.get(o.typeID) ?? 0) + 1);
+    const bestByType = new Map();
+    for (const o of withHistory) {
+      const cur = bestByType.get(o.typeID);
+      if (!cur || o.iskPerLpSell > cur.iskPerLpSell) bestByType.set(o.typeID, o);
+    }
+    return [...bestByType.values()].map((o) => ({
+      ...o,
+      offerCount: counts.get(o.typeID) ?? 1,
+    }));
+  }, [withHistory, groupByItem]);
+
+  // Sorted sell-volume references for colour tiering (relative to current display set).
   const sortedVolumes = useMemo(() => {
-    return adjustedOffers
+    return offersForDisplay
       .map((o) => o.sellVolume)
       .filter((v) => v != null && v > 0)
       .sort((a, b) => a - b);
-  }, [adjustedOffers]);
+  }, [offersForDisplay]);
+
+  // Sorted avg-daily-vol references — based on full withHistory so tier
+  // thresholds are stable when toggling groupByItem.
+  const sortedAvgVols = useMemo(() => {
+    return withHistory
+      .map((o) => o.avgDailyVol)
+      .filter((v) => v != null && v > 0)
+      .sort((a, b) => a - b);
+  }, [withHistory]);
+
+  // Top 5 picks: high daily volume AND best ISK/LP sell.
+  // Only computed once history has loaded; uses best offer per unique product.
+  const topPicks = useMemo(() => {
+    if (!Object.keys(history).length) return [];
+    const bestByType = new Map();
+    for (const o of withHistory) {
+      const cur = bestByType.get(o.typeID);
+      if (!cur || o.iskPerLpSell > cur.iskPerLpSell) bestByType.set(o.typeID, o);
+    }
+    const candidates = [...bestByType.values()].filter((o) => {
+      const tier = volumeTier(o.avgDailyVol, sortedAvgVols);
+      return tier === "midHigh" || tier === "high";
+    });
+    return candidates
+      .sort((a, b) => (b.iskPerLpSell ?? 0) - (a.iskPerLpSell ?? 0))
+      .slice(0, 5);
+  }, [withHistory, sortedAvgVols, history]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return adjustedOffers;
-    return adjustedOffers.filter((o) => o.name.toLowerCase().includes(q));
-  }, [adjustedOffers, search]);
+    if (!q) return offersForDisplay;
+    return offersForDisplay.filter((o) => o.name.toLowerCase().includes(q));
+  }, [offersForDisplay, search]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
     arr.sort((a, b) => {
       let av = a[sortKey], bv = b[sortKey];
-      // Nulls always sink to the bottom regardless of sort direction
+      // Nulls always sink to the bottom regardless of sort direction.
       if (av == null && bv == null) return 0;
       if (av == null) return 1;
       if (bv == null) return -1;
@@ -256,6 +353,12 @@ export default function LpStore() {
     });
     return arr;
   }, [filtered, sortKey, sortDir]);
+
+  function copyItem(offerId, name) {
+    navigator.clipboard.writeText(name).catch(() => {});
+    setCopied(offerId);
+    setTimeout(() => setCopied((prev) => (prev === offerId ? null : prev)), 1500);
+  }
 
   return (
     <>
@@ -318,6 +421,40 @@ export default function LpStore() {
 
       {data && !loading && (
         <>
+          {/* Top Picks — shown once history loads, high-volume + best ISK/LP */}
+          {topPicks.length > 0 && (
+            <div className={styles.topPicks}>
+              <div className={styles.topPicksLabel}>TOP PICKS — high volume · best ISK/LP</div>
+              <div className={styles.topPicksCards}>
+                {topPicks.map((o) => (
+                  <div key={o.offerId} className={styles.topPickCard}>
+                    <a
+                      href={`https://www.everef.net/type/${o.typeID}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={styles.topPickName}
+                      title={o.name}
+                    >
+                      {o.name}
+                    </a>
+                    <div className={styles.topPickStats}>
+                      <div className={styles.topPickStat}>
+                        <span className={styles.topPickVal}>{fmtIskPerLp(o.iskPerLpSell)}</span>
+                        <span className={styles.topPickStatLabel}>ISK/LP</span>
+                      </div>
+                      {o.avgDailyVol != null && (
+                        <div className={styles.topPickStat}>
+                          <span className={styles.topPickVolVal}>{fmt(o.avgDailyVol)}</span>
+                          <span className={styles.topPickStatLabel}>VOL/DAY</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className={styles.tableToolbar}>
             <div className={styles.meta}>
               <div>{filtered.length} / {data.offers.length} offers</div>
@@ -327,13 +464,20 @@ export default function LpStore() {
                 </div>
               )}
             </div>
-            <button
-              className={styles.toggleBtn}
-              onClick={() => setAdvanced((a) => !a)}
-            >
-              {advanced ? "SIMPLIFIED" : "ADVANCED"}
-            </button>
+            <div className={styles.toolbarBtns}>
+              <button
+                className={`${styles.toggleBtn} ${groupByItem ? styles.toggleBtnActive : ""}`}
+                onClick={() => setGroupByItem((g) => !g)}
+                title="Show only the best offer per product (highest ISK/LP sell)"
+              >
+                {groupByItem ? "GROUPED" : "GROUP BY ITEM"}
+              </button>
+              <button className={styles.toggleBtn} onClick={toggleAdvanced}>
+                {advanced ? "SIMPLIFIED" : "ADVANCED"}
+              </button>
+            </div>
           </div>
+
           <div className={styles.wrapper}>
             <table className={styles.table}>
               <thead>
@@ -352,6 +496,24 @@ export default function LpStore() {
                       ON MARKET{arrow("sellVolume")}
                     </th>
                   )}
+                  {advanced && (
+                    <th
+                      className={styles.thNum}
+                      onClick={() => handleSort("avgDailyVol")}
+                      title="30-day average daily trade volume on The Forge"
+                    >
+                      AVG VOL/DAY{arrow("avgDailyVol")}
+                    </th>
+                  )}
+                  {advanced && (
+                    <th
+                      className={styles.thNum}
+                      onClick={() => handleSort("daysOfSupply")}
+                      title="ON MARKET ÷ avg daily volume. Low = thin market (good flip). High = saturated stock."
+                    >
+                      DAYS SUPPLY{arrow("daysOfSupply")}
+                    </th>
+                  )}
                   <th className={styles.thNum} title="30-day average daily price trend on The Forge (Jita region)">30D PRICE</th>
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("revenueSell")}>SELL VAL{arrow("revenueSell")}</th>}
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("profitSell")}>PROFIT (SELL){arrow("profitSell")}</th>}
@@ -365,18 +527,38 @@ export default function LpStore() {
                 {sorted.map((o) => {
                   const tier = volumeTier(o.sellVolume, sortedVolumes);
                   const volClass = tier ? styles[`vol_${tier}`] : "";
-                  const h = history[o.typeID];
+                  const avgVolTier = volumeTier(o.avgDailyVol, sortedAvgVols);
+                  const avgVolClass = avgVolTier ? styles[`vol_${avgVolTier}`] : "";
+                  const isNegative = o.iskPerLpSell < 0;
                   return (
-                    <tr key={o.offerId} className={o.unknown ? styles.unknown : ""}>
+                    <tr
+                      key={o.offerId}
+                      className={[
+                        o.unknown ? styles.unknown : "",
+                        isNegative ? styles.rowNegative : "",
+                      ].filter(Boolean).join(" ")}
+                    >
                       <td className={styles.tdName}>
-                        <a
-                          href={`https://www.everef.net/type/${o.typeID}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={styles.link}
-                        >
-                          {o.name}
-                        </a>
+                        <div className={styles.nameRow}>
+                          <a
+                            href={`https://www.everef.net/type/${o.typeID}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={styles.link}
+                          >
+                            {o.name}
+                          </a>
+                          <button
+                            className={`${styles.copyBtn} ${copied === o.offerId ? styles.copyBtnDone : ""}`}
+                            onClick={() => copyItem(o.offerId, o.name)}
+                            title="Copy item name"
+                          >
+                            {copied === o.offerId ? "✓" : "⎘"}
+                          </button>
+                          {groupByItem && (o.offerCount ?? 1) > 1 && (
+                            <span className={styles.offerCount}>{o.offerCount} offers</span>
+                          )}
+                        </div>
                         {o.inputs.length > 0 && (
                           <div className={styles.inputs}>
                             {o.inputs.map((i) => (
@@ -396,10 +578,20 @@ export default function LpStore() {
                           {o.sellVolume != null ? fmt(o.sellVolume) : "—"}
                         </td>
                       )}
+                      {advanced && (
+                        <td className={`${styles.tdNum} ${avgVolClass}`}>
+                          {o.avgDailyVol != null ? fmt(o.avgDailyVol) : "—"}
+                        </td>
+                      )}
+                      {advanced && (
+                        <td className={`${styles.tdNum} ${daysOfSupplyClass(o.daysOfSupply)}`}>
+                          {o.daysOfSupply != null ? o.daysOfSupply.toLocaleString() : "—"}
+                        </td>
+                      )}
                       <td className={styles.tdSpark}>
                         <Sparkline
-                          values={h?.avg}
-                          title={priceTrendTitle(h?.avg)}
+                          values={o.priceHistory?.avg}
+                          title={priceTrendTitle(o.priceHistory?.avg)}
                         />
                       </td>
                       {advanced && <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(o.revenueSell)}</td>}
