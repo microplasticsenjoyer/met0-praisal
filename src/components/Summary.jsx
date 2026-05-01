@@ -15,6 +15,7 @@ function fmtVol(m3) {
 }
 
 export default function Summary({ totalBuy, totalSell, count, totalVolume }) {
+  const split = (totalBuy + totalSell) / 2;
   return (
     <div className={styles.summary}>
       <div className={styles.stat}>
@@ -25,6 +26,11 @@ export default function Summary({ totalBuy, totalSell, count, totalVolume }) {
       <div className={styles.stat}>
         <span className={styles.label}>SELL (min)</span>
         <span className={`${styles.value} ${styles.sell}`}>{fmt(totalSell)}</span>
+      </div>
+      <div className={styles.divider} />
+      <div className={styles.stat}>
+        <span className={styles.label}>SPLIT</span>
+        <span className={`${styles.value} ${styles.split}`}>{fmt(split)}</span>
       </div>
       <div className={styles.divider} />
       <div className={styles.stat}>
