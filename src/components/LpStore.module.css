@@ -119,6 +119,35 @@
   font-size: 13px;
 }
 
+/* ── Type filter chips ───────────────────────────────────────────────────── */
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.chip {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.chip:hover { border-color: var(--accent-dim); color: var(--text); }
+
+.chipActive {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+  background: rgba(0, 200, 255, 0.07);
+}
+
 .tableToolbar {
   display: flex;
   justify-content: space-between;

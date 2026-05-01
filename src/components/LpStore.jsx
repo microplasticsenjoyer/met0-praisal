@@ -22,6 +22,13 @@ const CORP_GROUPS = [
 
 const ALL_CORPS = CORP_GROUPS.flatMap((g) => g.corps);
 
+// EVE category_id → friendly label for filter chips.
+const CATEGORY_LABELS = {
+  6: "Ships", 7: "Modules", 8: "Charges", 9: "Blueprints",
+  16: "Skills", 17: "Commodities", 18: "Drones", 20: "Implants",
+  22: "Deployables", 30: "Apparel", 32: "Subsystems", 65: "Structures",
+};
+
 function fmt(v) {
   if (v === 0) return "—";
   const abs = Math.abs(v);
@@ -105,6 +112,7 @@ export default function LpStore() {
   );
 
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState(null);
 
   // Advanced toggle — persisted to localStorage; falls back to viewport width.
   const [advanced, setAdvanced] = useState(() => {
@@ -164,6 +172,7 @@ export default function LpStore() {
       setError(null);
       setData(null);
       setHistory({});
+      setCategoryFilter(null);
       try {
         const res = await fetch(`/api/lp/${corpId}`);
         const json = await res.json();
@@ -311,11 +320,23 @@ export default function LpStore() {
       .slice(0, 10);
   }, [withHistory, sortedAvgVols, history]);
 
+  const presentCategories = useMemo(() => {
+    const seen = new Map();
+    for (const o of offersForDisplay) {
+      if (o.categoryId != null && !seen.has(o.categoryId)) {
+        seen.set(o.categoryId, CATEGORY_LABELS[o.categoryId] ?? `Cat ${o.categoryId}`);
+      }
+    }
+    return [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [offersForDisplay]);
+
   const filtered = useMemo(() => {
+    let result = offersForDisplay;
     const q = search.trim().toLowerCase();
-    if (!q) return offersForDisplay;
-    return offersForDisplay.filter((o) => o.name.toLowerCase().includes(q));
-  }, [offersForDisplay, search]);
+    if (q) result = result.filter((o) => o.name.toLowerCase().includes(q));
+    if (categoryFilter != null) result = result.filter((o) => o.categoryId === categoryFilter);
+    return result;
+  }, [offersForDisplay, search, categoryFilter]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -338,6 +359,36 @@ export default function LpStore() {
     navigator.clipboard.writeText(name).catch(() => {});
     setCopied(offerId);
     setTimeout(() => setCopied((prev) => (prev === offerId ? null : prev)), 1500);
+  }
+
+  function exportTsv() {
+    const headers = ["Item", "Category", "QTY", "LP Cost", "ISK Cost", "Input Cost",
+      "On Market", "Sell Val", "Profit (Sell)", "ISK/LP (Sell)", "ISK/LP (Buy)"];
+    const rows = sorted.map((o) => [
+      o.name,
+      CATEGORY_LABELS[o.categoryId] ?? "",
+      o.quantity,
+      o.lpCost,
+      Math.round(o.iskCost),
+      Math.round(o.adjMaterialCost),
+      o.sellVolume ?? "",
+      Math.round(o.revenueSell),
+      Math.round(o.profitSell),
+      Math.round(o.iskPerLpSell),
+      Math.round(o.iskPerLpBuy),
+    ]);
+    const tsv = [headers, ...rows]
+      .map((r) => r.map((v) => String(v ?? "").replace(/\t/g, " ")).join("\t"))
+      .join("\n");
+    const blob = new Blob([tsv], { type: "text/tab-separated-values" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `lp-${data?.corp?.name?.replace(/\s+/g, "-") ?? "store"}-${new Date().toISOString().slice(0, 10)}.tsv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -442,6 +493,27 @@ export default function LpStore() {
             </div>
           )}
 
+          {/* Type filter chips */}
+          {presentCategories.length > 1 && (
+            <div className={styles.chipRow}>
+              <button
+                className={`${styles.chip} ${categoryFilter === null ? styles.chipActive : ""}`}
+                onClick={() => setCategoryFilter(null)}
+              >
+                ALL
+              </button>
+              {presentCategories.map(([catId, label]) => (
+                <button
+                  key={catId}
+                  className={`${styles.chip} ${categoryFilter === catId ? styles.chipActive : ""}`}
+                  onClick={() => setCategoryFilter((prev) => prev === catId ? null : catId)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className={styles.tableToolbar}>
             <div className={styles.meta}>
               <div>{filtered.length} / {data.offers.length} offers</div>
@@ -461,6 +533,9 @@ export default function LpStore() {
               </button>
               <button className={styles.toggleBtn} onClick={toggleAdvanced}>
                 {advanced ? "SIMPLIFIED" : "ADVANCED"}
+              </button>
+              <button className={styles.toggleBtn} onClick={exportTsv} title="Download as TSV (Excel/Sheets compatible)">
+                EXPORT TSV
               </button>
             </div>
           </div>
