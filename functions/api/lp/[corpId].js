@@ -263,7 +263,10 @@ async function fuzzworkPrices(typeIDs) {
   return out;
 }
 
-const CATEGORY_FETCH_CONCURRENCY = 15;
+// Each uncached type costs 2 ESI subrequests (type info + group info).
+// Baseline ops (~12 subrequests) + 2*N must stay under Cloudflare's 50 limit.
+const CATEGORY_FETCH_CONCURRENCY = 5;
+const MAX_CATEGORY_TYPES = 15;
 
 async function resolveTypeCategories(db, typeIds, nameMap) {
   if (typeIds.length === 0) return {};
@@ -277,7 +280,8 @@ async function resolveTypeCategories(db, typeIds, nameMap) {
   const catMap = {};
   for (const row of cached ?? []) catMap[row.type_id] = row.category_id;
 
-  const missing = typeIds.filter((id) => !(id in catMap));
+  // Cap total ESI fetches: remaining types get null categories and are resolved on future requests.
+  const missing = typeIds.filter((id) => !(id in catMap)).slice(0, MAX_CATEGORY_TYPES);
   if (missing.length === 0) return catMap;
 
   // Fetch group_id for each missing type with bounded concurrency.
