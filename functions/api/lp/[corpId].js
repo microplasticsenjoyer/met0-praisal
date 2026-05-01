@@ -43,7 +43,7 @@ export async function onRequestGet({ params, env }) {
     const productTypeIds = [...new Set(offers.map((o) => o.type_id))];
     const [{ priceMap, updatedAt: pricesUpdatedAt }, categoryMap] = await Promise.all([
       getPrices(db, typeIdArr),
-      resolveTypeCategories(db, productTypeIds),
+      resolveTypeCategories(db, productTypeIds, nameMap),
     ]);
 
     const enriched = offers.map((o) => {
@@ -263,7 +263,9 @@ async function fuzzworkPrices(typeIDs) {
   return out;
 }
 
-async function resolveTypeCategories(db, typeIds) {
+const CATEGORY_FETCH_CONCURRENCY = 15;
+
+async function resolveTypeCategories(db, typeIds, nameMap) {
   if (typeIds.length === 0) return {};
 
   const { data: cached } = await db
@@ -278,51 +280,65 @@ async function resolveTypeCategories(db, typeIds) {
   const missing = typeIds.filter((id) => !(id in catMap));
   if (missing.length === 0) return catMap;
 
-  // Fetch group_id for each missing type concurrently.
-  const typeInfos = await Promise.all(
-    missing.map(async (id) => {
+  // Fetch group_id for each missing type with bounded concurrency.
+  const typeInfos = [];
+  let tCursor = 0;
+  async function typeWorker() {
+    while (tCursor < missing.length) {
+      const id = missing[tCursor++];
       try {
         const r = await fetch(`${ESI_BASE}/universe/types/${id}/?datasource=tranquility`, {
           headers: { "User-Agent": "met0-praisal/0.4.0" },
         });
-        if (!r.ok) return null;
+        if (!r.ok) continue;
         const d = await r.json();
-        return d.group_id != null ? { typeID: id, groupId: d.group_id } : null;
-      } catch { return null; }
-    })
-  );
-  const valid = typeInfos.filter(Boolean);
-  if (valid.length === 0) return catMap;
+        if (d.group_id != null) typeInfos.push({ typeID: id, groupId: d.group_id });
+      } catch {}
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CATEGORY_FETCH_CONCURRENCY, missing.length) }, typeWorker));
 
-  // Resolve each unique group_id → category_id.
-  const uniqueGroups = [...new Set(valid.map((t) => t.groupId))];
+  if (typeInfos.length === 0) return catMap;
+
+  // Resolve each unique group_id → category_id with bounded concurrency.
+  const uniqueGroups = [...new Set(typeInfos.map((t) => t.groupId))];
   const groupCats = {};
-  await Promise.all(
-    uniqueGroups.map(async (gid) => {
+  let gCursor = 0;
+  async function groupWorker() {
+    while (gCursor < uniqueGroups.length) {
+      const gid = uniqueGroups[gCursor++];
       try {
         const r = await fetch(`${ESI_BASE}/universe/groups/${gid}/?datasource=tranquility`, {
           headers: { "User-Agent": "met0-praisal/0.4.0" },
         });
-        if (!r.ok) return;
+        if (!r.ok) continue;
         const d = await r.json();
         if (d.category_id != null) groupCats[gid] = d.category_id;
       } catch {}
-    })
-  );
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CATEGORY_FETCH_CONCURRENCY, uniqueGroups.length) }, groupWorker));
 
   const toCache = [];
-  for (const { typeID, groupId } of valid) {
+  for (const { typeID, groupId } of typeInfos) {
     const catId = groupCats[groupId];
     if (catId != null) {
       catMap[typeID] = catId;
-      toCache.push({ typeID, catId });
+      toCache.push({ type_id: typeID, category_id: catId });
     }
   }
   if (toCache.length > 0) {
-    await Promise.all(
-      toCache.map(({ typeID, catId }) =>
-        db.from("item_cache").update({ category_id: catId }).eq("type_id", typeID)
-      )
+    // Single upsert instead of N individual updates.
+    const now = new Date().toISOString();
+    await db.from("item_cache").upsert(
+      toCache.map(({ type_id, category_id }) => ({
+        type_id,
+        name: nameMap[type_id] ?? `Type ${type_id}`,
+        name_lower: (nameMap[type_id] ?? `Type ${type_id}`).toLowerCase(),
+        category_id,
+        updated_at: now,
+      })),
+      { onConflict: "type_id" }
     );
   }
   return catMap;
