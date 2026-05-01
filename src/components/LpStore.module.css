@@ -119,6 +119,35 @@
   font-size: 13px;
 }
 
+/* ── Type filter chips ───────────────────────────────────────────────────── */
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.chip {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.chip:hover { border-color: var(--accent-dim); color: var(--text); }
+
+.chipActive {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+  background: rgba(0, 200, 255, 0.07);
+}
+
 .tableToolbar {
   display: flex;
   justify-content: space-between;
@@ -270,10 +299,26 @@
   text-transform: uppercase;
 }
 
-.topPicksCards {
+/* Scrolling ticker */
+@keyframes tickerScroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.topPicksScroller {
+  overflow: hidden;
+  width: 100%;
+}
+
+.topPicksTrack {
   display: flex;
-  flex-wrap: wrap;
   gap: 8px;
+  width: max-content;
+  animation: tickerScroll 40s linear infinite;
+}
+
+.topPicksTrack:hover {
+  animation-play-state: paused;
 }
 
 .topPickCard {
@@ -313,6 +358,18 @@
   font-size: 13px;
   font-weight: bold;
   color: var(--sell);
+}
+
+.topPickValNeg {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--danger);
+}
+
+.topPickCardNeg {
+  border-color: rgba(255, 68, 68, 0.35) !important;
+  background: rgba(255, 68, 68, 0.06) !important;
 }
 
 .topPickVolVal {

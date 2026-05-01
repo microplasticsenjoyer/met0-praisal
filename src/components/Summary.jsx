@@ -8,7 +8,14 @@ function fmt(v) {
   return v.toLocaleString("en-US", { maximumFractionDigits: 0 }) + " ISK";
 }
 
-export default function Summary({ totalBuy, totalSell, count }) {
+function fmtVol(m3) {
+  if (m3 >= 1e6) return (m3 / 1e6).toFixed(2) + " M m³";
+  if (m3 >= 1e3) return (m3 / 1e3).toFixed(2) + " k m³";
+  return m3.toLocaleString("en-US", { maximumFractionDigits: 2 }) + " m³";
+}
+
+export default function Summary({ totalBuy, totalSell, count, totalVolume }) {
+  const split = (totalBuy + totalSell) / 2;
   return (
     <div className={styles.summary}>
       <div className={styles.stat}>
@@ -22,9 +29,23 @@ export default function Summary({ totalBuy, totalSell, count }) {
       </div>
       <div className={styles.divider} />
       <div className={styles.stat}>
+        <span className={styles.label}>SPLIT</span>
+        <span className={`${styles.value} ${styles.split}`}>{fmt(split)}</span>
+      </div>
+      <div className={styles.divider} />
+      <div className={styles.stat}>
         <span className={styles.label}>BUY (max)</span>
         <span className={`${styles.value} ${styles.buy}`}>{fmt(totalBuy)}</span>
       </div>
+      {totalVolume != null && (
+        <>
+          <div className={styles.divider} />
+          <div className={styles.stat}>
+            <span className={styles.label}>VOLUME</span>
+            <span className={styles.value}>{fmtVol(totalVolume)}</span>
+          </div>
+        </>
+      )}
     </div>
   );
 }

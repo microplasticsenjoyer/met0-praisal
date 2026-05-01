@@ -1,0 +1,283 @@
+.controls {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.selectorGroup { display: flex; gap: 16px; flex-wrap: wrap; }
+.taxGroup { display: flex; gap: 12px; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.select, .search {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  min-width: 280px;
+}
+.select:focus, .search:focus { outline: none; border-color: var(--accent-dim); }
+
+.numInput {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  width: 140px;
+}
+.numInput:focus { outline: none; border-color: var(--accent-dim); }
+
+.calcBtn {
+  background: transparent;
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  padding: 8px 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.calcBtn:hover { border-color: var(--accent); color: var(--text-bright); }
+
+.notice {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent-dim);
+  letter-spacing: 0.08em;
+  border: 1px dashed var(--border-bright);
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.loading {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--accent-dim);
+  letter-spacing: 0.1em;
+  padding: 40px 0;
+  text-align: center;
+  animation: pulse 1s ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+.error {
+  background: rgba(255, 68, 68, 0.08);
+  border: 1px solid rgba(255, 68, 68, 0.3);
+  color: #ff6b6b;
+  padding: 12px 16px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+/* ── Top Deals ───────────────────────────────────────────────────────────── */
+.topDeals {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-bright);
+  background: rgba(0, 230, 118, 0.03);
+}
+
+.topDealsLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--sell);
+  letter-spacing: 0.14em;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.topDealsCards { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.topDealCard {
+  border: 1px solid rgba(0, 230, 118, 0.25);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 160px;
+  max-width: 240px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.topDealName {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topDealStats { display: flex; gap: 12px; }
+.topDealStat { display: flex; align-items: baseline; gap: 3px; }
+
+.topDealPct {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--sell);
+}
+
+.topDealPrice {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.topDealStatLabel {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+}
+
+/* ── Table toolbar ───────────────────────────────────────────────────────── */
+.tableToolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+}
+
+.cacheAge { font-size: 10px; opacity: 0.85; margin-top: 3px; letter-spacing: 0.06em; }
+
+.toolbarBtns { display: flex; gap: 8px; align-items: center; }
+
+.toggleBtn {
+  background: transparent;
+  border: 1px solid var(--border-bright);
+  color: var(--text-dim);
+  padding: 6px 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s;
+}
+.toggleBtn:hover { border-color: var(--accent); color: var(--accent); }
+.toggleBtnActive { border-color: var(--accent) !important; color: var(--accent) !important; }
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+.wrapper { border: 1px solid var(--border); overflow-x: auto; }
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.table thead { background: rgba(0,0,0,0.3); position: sticky; top: 0; z-index: 1; }
+
+.table th {
+  padding: 9px 12px;
+  text-align: right;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+.table th:hover { color: var(--accent); }
+
+.thName { text-align: left !important; }
+.thNum { text-align: right; }
+.thHighlight { color: var(--accent) !important; }
+.thSort { color: var(--sell) !important; }
+
+.table td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.table tbody tr:last-child td { border-bottom: none; }
+.table tbody tr:nth-child(even) { background: rgba(255,255,255,0.015); }
+.table tbody tr:hover { background: rgba(0,200,255,0.04); }
+
+.tdName { text-align: left; color: var(--text); max-width: 300px; }
+.tdNum { text-align: right; color: var(--text); white-space: nowrap; }
+
+.highlight { font-weight: bold; font-size: 14px; }
+.pctCell   { font-weight: bold; font-size: 14px; }
+.sell      { color: var(--sell) !important; }
+.danger    { color: var(--danger) !important; }
+
+/* Row-level highlights */
+.rowGreat { background: rgba(0, 230, 118, 0.04) !important; }
+.rowBad   { background: rgba(255, 68,  68,  0.04) !important; }
+
+.nameRow { display: flex; align-items: center; gap: 6px; }
+
+.link { color: var(--text); text-decoration: none; transition: color 0.15s; }
+.link:hover { color: var(--accent); text-decoration: underline; }
+
+.copyBtn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.tdName:hover .copyBtn, .copyBtn:focus { opacity: 1; }
+.copyBtnDone { color: var(--sell) !important; opacity: 1 !important; }
+
+.inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.input::before { content: "↳ "; opacity: 0.5; }
+
+/* ── Mobile ───────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .controls { gap: 10px; }
+  .selectorGroup { width: 100%; }
+  .select, .search { min-width: 0; width: 100%; }
+  .taxGroup { flex-wrap: wrap; gap: 8px; }
+  .numInput { width: 110px; }
+}
+
+/* ── Desktop ──────────────────────────────────────────────────────────────── */
+@media (min-width: 768px) {
+  .table { font-size: 15px; }
+  .table th { font-size: 11px; }
+  .highlight { font-size: 16px; }
+  .pctCell   { font-size: 16px; }
+}

@@ -37,9 +37,14 @@ export async function onRequestGet({ params, env }) {
     }
     const typeIdArr = [...typeIds];
 
-    // Names first — price_cache has FK to item_cache(type_id).
+    // Names first so item_cache rows exist before category update touches them.
     const nameMap = await resolveTypeNames(db, typeIdArr);
-    const { priceMap, updatedAt: pricesUpdatedAt } = await getPrices(db, typeIdArr);
+    // Categories only needed for product types (not input materials).
+    const productTypeIds = [...new Set(offers.map((o) => o.type_id))];
+    const [{ priceMap, updatedAt: pricesUpdatedAt }, categoryMap] = await Promise.all([
+      getPrices(db, typeIdArr),
+      resolveTypeCategories(db, productTypeIds),
+    ]);
 
     const enriched = offers.map((o) => {
       const product = priceMap[o.type_id] ?? null;
@@ -89,6 +94,7 @@ export async function onRequestGet({ params, env }) {
         iskPerLpSell,
         iskPerLpBuy,
         sellVolume: product ? (product.sell_volume ?? null) : null,
+        categoryId: categoryMap[o.type_id] ?? null,
         unknown: !product || !inputsValid,
       };
     });
@@ -144,7 +150,9 @@ async function getOffers(db, corpId) {
   }));
 
   if (rows.length > 0) {
-    await db.from("lp_offers").upsert(rows, { onConflict: "corporation_id,offer_id" });
+    // Delete before insert so stale rows from wrong corp associations are fully replaced.
+    await db.from("lp_offers").delete().eq("corporation_id", corpId);
+    await db.from("lp_offers").insert(rows);
   }
   return { offers: rows, updatedAt };
 }
@@ -253,6 +261,71 @@ async function fuzzworkPrices(typeIDs) {
     Object.assign(out, await res.json());
   }
   return out;
+}
+
+async function resolveTypeCategories(db, typeIds) {
+  if (typeIds.length === 0) return {};
+
+  const { data: cached } = await db
+    .from("item_cache")
+    .select("type_id, category_id")
+    .in("type_id", typeIds)
+    .not("category_id", "is", null);
+
+  const catMap = {};
+  for (const row of cached ?? []) catMap[row.type_id] = row.category_id;
+
+  const missing = typeIds.filter((id) => !(id in catMap));
+  if (missing.length === 0) return catMap;
+
+  // Fetch group_id for each missing type concurrently.
+  const typeInfos = await Promise.all(
+    missing.map(async (id) => {
+      try {
+        const r = await fetch(`${ESI_BASE}/universe/types/${id}/?datasource=tranquility`, {
+          headers: { "User-Agent": "met0-praisal/0.4.0" },
+        });
+        if (!r.ok) return null;
+        const d = await r.json();
+        return d.group_id != null ? { typeID: id, groupId: d.group_id } : null;
+      } catch { return null; }
+    })
+  );
+  const valid = typeInfos.filter(Boolean);
+  if (valid.length === 0) return catMap;
+
+  // Resolve each unique group_id → category_id.
+  const uniqueGroups = [...new Set(valid.map((t) => t.groupId))];
+  const groupCats = {};
+  await Promise.all(
+    uniqueGroups.map(async (gid) => {
+      try {
+        const r = await fetch(`${ESI_BASE}/universe/groups/${gid}/?datasource=tranquility`, {
+          headers: { "User-Agent": "met0-praisal/0.4.0" },
+        });
+        if (!r.ok) return;
+        const d = await r.json();
+        if (d.category_id != null) groupCats[gid] = d.category_id;
+      } catch {}
+    })
+  );
+
+  const toCache = [];
+  for (const { typeID, groupId } of valid) {
+    const catId = groupCats[groupId];
+    if (catId != null) {
+      catMap[typeID] = catId;
+      toCache.push({ typeID, catId });
+    }
+  }
+  if (toCache.length > 0) {
+    await Promise.all(
+      toCache.map(({ typeID, catId }) =>
+        db.from("item_cache").update({ category_id: catId }).eq("type_id", typeID)
+      )
+    );
+  }
+  return catMap;
 }
 
 function chunk(arr, size) {

@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import styles from "./LpStore.module.css";
-import Sparkline from "./Sparkline.jsx";
 
 const CORP_GROUPS = [
   {
@@ -23,6 +22,13 @@ const CORP_GROUPS = [
 
 const ALL_CORPS = CORP_GROUPS.flatMap((g) => g.corps);
 
+// EVE category_id → friendly label for filter chips.
+const CATEGORY_LABELS = {
+  6: "Ships", 7: "Modules", 8: "Charges", 9: "Blueprints",
+  16: "Skills", 17: "Commodities", 18: "Drones", 20: "Implants",
+  22: "Deployables", 30: "Apparel", 32: "Subsystems", 65: "Structures",
+};
+
 function fmt(v) {
   if (v === 0) return "—";
   const abs = Math.abs(v);
@@ -36,17 +42,6 @@ function fmt(v) {
 function fmtIskPerLp(v) {
   if (!isFinite(v) || v === 0) return "—";
   return v.toLocaleString("en-US", { maximumFractionDigits: 0 });
-}
-
-function priceTrendTitle(values) {
-  if (!values || values.length < 2) return undefined;
-  const first = values[0];
-  const last = values[values.length - 1];
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const pct = first > 0 ? ((last - first) / first) * 100 : 0;
-  const sign = pct >= 0 ? "+" : "";
-  return `${values.length}d price · ${sign}${pct.toFixed(1)}% · low ${fmt(min)} · high ${fmt(max)}`;
 }
 
 function timeAgo(isoString) {
@@ -70,14 +65,6 @@ function volumeTier(v, sortedAll) {
   if (pct < 0.5) return "midLow";
   if (pct < 0.75) return "midHigh";
   return "high";
-}
-
-// Green = thin market (great flip), red = deeply saturated.
-function daysOfSupplyClass(days) {
-  if (days == null) return "";
-  if (days < 7) return styles.sell;
-  if (days > 30) return styles.danger;
-  return "";
 }
 
 const STORAGE_PREFIX = "met0:lpStore:";
@@ -125,6 +112,7 @@ export default function LpStore() {
   );
 
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState(null);
 
   // Advanced toggle — persisted to localStorage; falls back to viewport width.
   const [advanced, setAdvanced] = useState(() => {
@@ -184,6 +172,7 @@ export default function LpStore() {
       setError(null);
       setData(null);
       setHistory({});
+      setCategoryFilter(null);
       try {
         const res = await fetch(`/api/lp/${corpId}`);
         const json = await res.json();
@@ -313,7 +302,7 @@ export default function LpStore() {
       .sort((a, b) => a - b);
   }, [withHistory]);
 
-  // Top 5 picks: high daily volume AND best ISK/LP sell.
+  // Top 10 picks: highest daily volume (midHigh/high tier), coloured by profitability.
   // Only computed once history has loaded; uses best offer per unique product.
   const topPicks = useMemo(() => {
     if (!Object.keys(history).length) return [];
@@ -327,15 +316,27 @@ export default function LpStore() {
       return tier === "midHigh" || tier === "high";
     });
     return candidates
-      .sort((a, b) => (b.iskPerLpSell ?? 0) - (a.iskPerLpSell ?? 0))
-      .slice(0, 5);
+      .sort((a, b) => (b.avgDailyVol ?? 0) - (a.avgDailyVol ?? 0))
+      .slice(0, 10);
   }, [withHistory, sortedAvgVols, history]);
 
+  const presentCategories = useMemo(() => {
+    const seen = new Map();
+    for (const o of offersForDisplay) {
+      if (o.categoryId != null && !seen.has(o.categoryId)) {
+        seen.set(o.categoryId, CATEGORY_LABELS[o.categoryId] ?? `Cat ${o.categoryId}`);
+      }
+    }
+    return [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [offersForDisplay]);
+
   const filtered = useMemo(() => {
+    let result = offersForDisplay;
     const q = search.trim().toLowerCase();
-    if (!q) return offersForDisplay;
-    return offersForDisplay.filter((o) => o.name.toLowerCase().includes(q));
-  }, [offersForDisplay, search]);
+    if (q) result = result.filter((o) => o.name.toLowerCase().includes(q));
+    if (categoryFilter != null) result = result.filter((o) => o.categoryId === categoryFilter);
+    return result;
+  }, [offersForDisplay, search, categoryFilter]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -358,6 +359,36 @@ export default function LpStore() {
     navigator.clipboard.writeText(name).catch(() => {});
     setCopied(offerId);
     setTimeout(() => setCopied((prev) => (prev === offerId ? null : prev)), 1500);
+  }
+
+  function exportTsv() {
+    const headers = ["Item", "Category", "QTY", "LP Cost", "ISK Cost", "Input Cost",
+      "On Market", "Sell Val", "Profit (Sell)", "ISK/LP (Sell)", "ISK/LP (Buy)"];
+    const rows = sorted.map((o) => [
+      o.name,
+      CATEGORY_LABELS[o.categoryId] ?? "",
+      o.quantity,
+      o.lpCost,
+      Math.round(o.iskCost),
+      Math.round(o.adjMaterialCost),
+      o.sellVolume ?? "",
+      Math.round(o.revenueSell),
+      Math.round(o.profitSell),
+      Math.round(o.iskPerLpSell),
+      Math.round(o.iskPerLpBuy),
+    ]);
+    const tsv = [headers, ...rows]
+      .map((r) => r.map((v) => String(v ?? "").replace(/\t/g, " ")).join("\t"))
+      .join("\n");
+    const blob = new Blob([tsv], { type: "text/tab-separated-values" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `lp-${data?.corp?.name?.replace(/\s+/g, "-") ?? "store"}-${new Date().toISOString().slice(0, 10)}.tsv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -421,37 +452,65 @@ export default function LpStore() {
 
       {data && !loading && (
         <>
-          {/* Top Picks — shown once history loads, high-volume + best ISK/LP */}
+          {/* Top Picks — shown once history loads, highest volume, coloured by profitability */}
           {topPicks.length > 0 && (
             <div className={styles.topPicks}>
-              <div className={styles.topPicksLabel}>TOP PICKS — high volume · best ISK/LP</div>
-              <div className={styles.topPicksCards}>
-                {topPicks.map((o) => (
-                  <div key={o.offerId} className={styles.topPickCard}>
-                    <a
-                      href={`https://www.everef.net/type/${o.typeID}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={styles.topPickName}
-                      title={o.name}
+              <div className={styles.topPicksLabel}>TOP PICKS — HIGH VOLUME · BEST ISK/LP</div>
+              <div className={styles.topPicksScroller}>
+                <div className={styles.topPicksTrack}>
+                  {[...topPicks, ...topPicks].map((o, i) => (
+                    <div
+                      key={`${o.offerId}-${i}`}
+                      className={`${styles.topPickCard} ${o.iskPerLpSell < 0 ? styles.topPickCardNeg : ""}`}
                     >
-                      {o.name}
-                    </a>
-                    <div className={styles.topPickStats}>
-                      <div className={styles.topPickStat}>
-                        <span className={styles.topPickVal}>{fmtIskPerLp(o.iskPerLpSell)}</span>
-                        <span className={styles.topPickStatLabel}>ISK/LP</span>
-                      </div>
-                      {o.avgDailyVol != null && (
+                      <a
+                        href={`https://www.everef.net/type/${o.typeID}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={styles.topPickName}
+                        title={o.name}
+                      >
+                        {o.name}
+                      </a>
+                      <div className={styles.topPickStats}>
                         <div className={styles.topPickStat}>
-                          <span className={styles.topPickVolVal}>{fmt(o.avgDailyVol)}</span>
-                          <span className={styles.topPickStatLabel}>VOL/DAY</span>
+                          <span className={o.iskPerLpSell < 0 ? styles.topPickValNeg : styles.topPickVal}>
+                            {fmtIskPerLp(o.iskPerLpSell)}
+                          </span>
+                          <span className={styles.topPickStatLabel}>ISK/LP</span>
                         </div>
-                      )}
+                        {o.avgDailyVol != null && (
+                          <div className={styles.topPickStat}>
+                            <span className={styles.topPickVolVal}>{fmt(o.avgDailyVol)}</span>
+                            <span className={styles.topPickStatLabel}>VOL/DAY</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
+            </div>
+          )}
+
+          {/* Type filter chips */}
+          {presentCategories.length > 1 && (
+            <div className={styles.chipRow}>
+              <button
+                className={`${styles.chip} ${categoryFilter === null ? styles.chipActive : ""}`}
+                onClick={() => setCategoryFilter(null)}
+              >
+                ALL
+              </button>
+              {presentCategories.map(([catId, label]) => (
+                <button
+                  key={catId}
+                  className={`${styles.chip} ${categoryFilter === catId ? styles.chipActive : ""}`}
+                  onClick={() => setCategoryFilter((prev) => prev === catId ? null : catId)}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           )}
 
@@ -475,6 +534,9 @@ export default function LpStore() {
               <button className={styles.toggleBtn} onClick={toggleAdvanced}>
                 {advanced ? "SIMPLIFIED" : "ADVANCED"}
               </button>
+              <button className={styles.toggleBtn} onClick={exportTsv} title="Download as TSV (Excel/Sheets compatible)">
+                EXPORT TSV
+              </button>
             </div>
           </div>
 
@@ -496,25 +558,6 @@ export default function LpStore() {
                       ON MARKET{arrow("sellVolume")}
                     </th>
                   )}
-                  {advanced && (
-                    <th
-                      className={styles.thNum}
-                      onClick={() => handleSort("avgDailyVol")}
-                      title="30-day average daily trade volume on The Forge"
-                    >
-                      AVG VOL/DAY{arrow("avgDailyVol")}
-                    </th>
-                  )}
-                  {advanced && (
-                    <th
-                      className={styles.thNum}
-                      onClick={() => handleSort("daysOfSupply")}
-                      title="ON MARKET ÷ avg daily volume. Low = thin market (good flip). High = saturated stock."
-                    >
-                      DAYS SUPPLY{arrow("daysOfSupply")}
-                    </th>
-                  )}
-                  <th className={styles.thNum} title="30-day average daily price trend on The Forge (Jita region)">30D PRICE</th>
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("revenueSell")}>SELL VAL{arrow("revenueSell")}</th>}
                   {advanced && <th className={styles.thNum} onClick={() => handleSort("profitSell")}>PROFIT (SELL){arrow("profitSell")}</th>}
                   <th className={`${styles.thNum} ${styles.thHighlight}`} onClick={() => handleSort("iskPerLpSell")}>
@@ -527,8 +570,6 @@ export default function LpStore() {
                 {sorted.map((o) => {
                   const tier = volumeTier(o.sellVolume, sortedVolumes);
                   const volClass = tier ? styles[`vol_${tier}`] : "";
-                  const avgVolTier = volumeTier(o.avgDailyVol, sortedAvgVols);
-                  const avgVolClass = avgVolTier ? styles[`vol_${avgVolTier}`] : "";
                   const isNegative = o.iskPerLpSell < 0;
                   return (
                     <tr
@@ -578,22 +619,6 @@ export default function LpStore() {
                           {o.sellVolume != null ? fmt(o.sellVolume) : "—"}
                         </td>
                       )}
-                      {advanced && (
-                        <td className={`${styles.tdNum} ${avgVolClass}`}>
-                          {o.avgDailyVol != null ? fmt(o.avgDailyVol) : "—"}
-                        </td>
-                      )}
-                      {advanced && (
-                        <td className={`${styles.tdNum} ${daysOfSupplyClass(o.daysOfSupply)}`}>
-                          {o.daysOfSupply != null ? o.daysOfSupply.toLocaleString() : "—"}
-                        </td>
-                      )}
-                      <td className={styles.tdSpark}>
-                        <Sparkline
-                          values={o.priceHistory?.avg}
-                          title={priceTrendTitle(o.priceHistory?.avg)}
-                        />
-                      </td>
                       {advanced && <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(o.revenueSell)}</td>}
                       {advanced && (
                         <td className={`${styles.tdNum} ${o.profitSell >= 0 ? styles.sell : styles.danger}`}>

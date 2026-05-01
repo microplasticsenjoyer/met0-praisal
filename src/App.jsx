@@ -6,11 +6,13 @@ import Summary from "./components/Summary.jsx";
 import ShareBar from "./components/ShareBar.jsx";
 import Tabs from "./components/Tabs.jsx";
 import LpStore from "./components/LpStore.jsx";
+import CorpStore from "./components/CorpStore.jsx";
 import styles from "./App.module.css";
 
 const TAB_OPTIONS = [
   { value: "appraise", label: "Appraise" },
   { value: "lp", label: "LP Store" },
+  { value: "corp", label: "Corp LP" },
 ];
 
 export default function App() {
@@ -21,7 +23,9 @@ export default function App() {
   const [tab, setTab] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("a")) return "appraise";
-    return params.get("tab") === "lp" ? "lp" : "appraise";
+    const t = params.get("tab");
+    if (t === "lp" || t === "corp") return t;
+    return "appraise";
   });
 
   // On load, check if URL has a slug (e.g. /?a=x7k2p)
@@ -32,7 +36,7 @@ export default function App() {
 
   function handleTabChange(next) {
     setTab(next);
-    const url = next === "lp" ? "?tab=lp" : window.location.pathname;
+    const url = (next === "lp" || next === "corp") ? `?tab=${next}` : window.location.pathname;
     window.history.replaceState({}, "", url);
   }
 
@@ -85,7 +89,7 @@ export default function App() {
   return (
     <div className={styles.app}>
       <Header />
-      <main className={`${styles.main} ${tab === "lp" ? styles.mainWide : ""}`}>
+      <main className={`${styles.main} ${(tab === "lp" || tab === "corp") ? styles.mainWide : ""}`}>
         <Tabs value={tab} onChange={handleTabChange} options={TAB_OPTIONS} />
         {tab === "appraise" && (
           loadingShared ? (
@@ -102,14 +106,26 @@ export default function App() {
               {results && (
                 <>
                   <ShareBar slug={results.slug} createdAt={results.createdAt} />
-                  <Summary totalBuy={Number(results.totalBuy)} totalSell={Number(results.totalSell)} count={results.items.length} />
+                  <Summary
+                    totalBuy={Number(results.totalBuy)}
+                    totalSell={Number(results.totalSell)}
+                    count={results.items.length}
+                    totalVolume={(() => {
+                      let vol = null;
+                      for (const item of results.items) {
+                        if (item.volumeEach != null) vol = (vol ?? 0) + item.quantity * item.volumeEach;
+                      }
+                      return vol;
+                    })()}
+                  />
                   <ResultsTable items={results.items} />
                 </>
               )}
             </>
           )
         )}
-        {tab === "lp" && <LpStore />}
+        {tab === "lp"   && <LpStore />}
+        {tab === "corp" && <CorpStore />}
       </main>
       <footer className={styles.footer}>
         <span>met0-praisal v0.4.0</span>

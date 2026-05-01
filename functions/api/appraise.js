@@ -33,9 +33,12 @@ export async function onRequestPost({ request, env }) {
     const names = parsed.map((i) => i.name);
     const nameMap = await resolveNames(db, names);
 
-    // ── 2. Fetch prices (cache-first) ─────────────────────────────────────
+    // ── 2. Fetch prices + volumes (cache-first) ───────────────────────────
     const typeIDs = Object.values(nameMap).filter(Boolean);
-    const priceMap = await getPrices(db, typeIDs);
+    const [priceMap, volumeMap] = await Promise.all([
+      getPrices(db, typeIDs),
+      getVolumes(db, typeIDs),
+    ]);
 
     // ── 3. Build line items ───────────────────────────────────────────────
     let totalBuy = 0;
@@ -49,11 +52,12 @@ export async function onRequestPost({ request, env }) {
       const buyEach = prices?.buy_max ?? 0;
       const sellTotal = sellEach * quantity;
       const buyTotal = buyEach * quantity;
+      const volumeEach = (typeID != null ? volumeMap[typeID] : null) ?? null;
 
       totalBuy += buyTotal;
       totalSell += sellTotal;
 
-      return { typeID, name, quantity, sellEach, buyEach, sellTotal, buyTotal, unknown: !typeID || !prices };
+      return { typeID, name, quantity, sellEach, buyEach, sellTotal, buyTotal, volumeEach, unknown: !typeID || !prices };
     });
 
     // ── 4. Persist appraisal ──────────────────────────────────────────────
@@ -236,6 +240,48 @@ async function uniqueSlug(db) {
     if (!data) return slug;
   }
   return generateSlug(8); // fallback to longer slug
+}
+
+async function getVolumes(db, typeIDs) {
+  if (typeIDs.length === 0) return {};
+
+  const { data: cached } = await db
+    .from("item_cache")
+    .select("type_id, volume")
+    .in("type_id", typeIDs)
+    .not("volume", "is", null);
+
+  const volumeMap = {};
+  for (const row of cached ?? []) volumeMap[row.type_id] = Number(row.volume);
+
+  const missing = typeIDs.filter((id) => !(id in volumeMap));
+  if (missing.length > 0) {
+    const results = await Promise.all(
+      missing.map(async (id) => {
+        try {
+          const res = await fetch(`${ESI_BASE}/universe/types/${id}/?datasource=tranquility`, {
+            headers: { "User-Agent": "met0-praisal/0.4.0" },
+          });
+          if (!res.ok) return null;
+          const data = await res.json();
+          return data.volume != null ? { typeID: id, volume: data.volume } : null;
+        } catch {
+          return null;
+        }
+      })
+    );
+    const toCache = results.filter(Boolean);
+    for (const { typeID, volume } of toCache) volumeMap[typeID] = volume;
+    if (toCache.length > 0) {
+      await Promise.all(
+        toCache.map(({ typeID, volume }) =>
+          db.from("item_cache").update({ volume }).eq("type_id", typeID)
+        )
+      );
+    }
+  }
+
+  return volumeMap;
 }
 
 function chunk(arr, size) {
