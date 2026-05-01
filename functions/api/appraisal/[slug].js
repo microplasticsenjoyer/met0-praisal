@@ -30,6 +30,18 @@ export async function onRequestGet({ params, env }) {
     .eq("appraisal_id", appraisal.id)
     .order("sell_total", { ascending: false });
 
+  // Fetch volumes from item_cache for known type IDs.
+  const typeIDs = (items ?? []).map((i) => i.type_id).filter(Boolean);
+  let volumeMap = {};
+  if (typeIDs.length > 0) {
+    const { data: vols } = await db
+      .from("item_cache")
+      .select("type_id, volume")
+      .in("type_id", typeIDs)
+      .not("volume", "is", null);
+    for (const row of vols ?? []) volumeMap[row.type_id] = Number(row.volume);
+  }
+
   return new Response(
     JSON.stringify({
       slug: appraisal.slug,
@@ -46,6 +58,7 @@ export async function onRequestGet({ params, env }) {
         buyEach: parseFloat(i.buy_each),
         sellTotal: parseFloat(i.sell_total),
         buyTotal: parseFloat(i.buy_total),
+        volumeEach: volumeMap[i.type_id] ?? null,
         unknown: i.unknown,
       })),
     }),

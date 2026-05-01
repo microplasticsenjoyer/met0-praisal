@@ -9,6 +9,13 @@ function fmt(v) {
   return v.toLocaleString("en-US", { maximumFractionDigits: 2 });
 }
 
+function fmtVol(m3) {
+  if (m3 == null) return "—";
+  if (m3 >= 1e6) return (m3 / 1e6).toFixed(2) + "M m³";
+  if (m3 >= 1e3) return (m3 / 1e3).toFixed(2) + "k m³";
+  return m3.toLocaleString("en-US", { maximumFractionDigits: 2 }) + " m³";
+}
+
 export default function ResultsTable({ items }) {
   const [sortKey, setSortKey] = useState("sellTotal");
   const [sortDir, setSortDir] = useState("desc");
@@ -18,8 +25,16 @@ export default function ResultsTable({ items }) {
     else { setSortKey(key); setSortDir("desc"); }
   }
 
-  const sorted = [...items].sort((a, b) => {
+  const withVolume = items.map((item) => ({
+    ...item,
+    volumeTotal: item.volumeEach != null ? item.volumeEach * item.quantity : null,
+  }));
+
+  const sorted = [...withVolume].sort((a, b) => {
     let av = a[sortKey], bv = b[sortKey];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
     if (typeof av === "string") av = av.toLowerCase();
     if (typeof bv === "string") bv = bv.toLowerCase();
     if (av < bv) return sortDir === "asc" ? -1 : 1;
@@ -36,6 +51,7 @@ export default function ResultsTable({ items }) {
           <tr>
             <th className={styles.thName} onClick={() => handleSort("name")}>ITEM{arr("name")}</th>
             <th className={styles.thNum} onClick={() => handleSort("quantity")}>QTY{arr("quantity")}</th>
+            <th className={styles.thNum} onClick={() => handleSort("volumeTotal")}>VOLUME{arr("volumeTotal")}</th>
             <th className={styles.thNum} onClick={() => handleSort("sellEach")}>SELL / UNIT{arr("sellEach")}</th>
             <th className={styles.thNum} onClick={() => handleSort("buyEach")}>BUY / UNIT{arr("buyEach")}</th>
             <th className={styles.thNum} onClick={() => handleSort("sellTotal")}>SELL TOTAL{arr("sellTotal")}</th>
@@ -55,6 +71,7 @@ export default function ResultsTable({ items }) {
                 )}
               </td>
               <td className={styles.tdNum}>{item.quantity.toLocaleString()}</td>
+              <td className={`${styles.tdNum} ${styles.volCell}`}>{fmtVol(item.volumeTotal)}</td>
               <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(item.sellEach)}</td>
               <td className={`${styles.tdNum} ${styles.buy}`}>{fmt(item.buyEach)}</td>
               <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(item.sellTotal)}</td>

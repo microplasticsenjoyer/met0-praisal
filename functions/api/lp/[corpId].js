@@ -144,7 +144,9 @@ async function getOffers(db, corpId) {
   }));
 
   if (rows.length > 0) {
-    await db.from("lp_offers").upsert(rows, { onConflict: "corporation_id,offer_id" });
+    // Delete before insert so stale rows from wrong corp associations are fully replaced.
+    await db.from("lp_offers").delete().eq("corporation_id", corpId);
+    await db.from("lp_offers").insert(rows);
   }
   return { offers: rows, updatedAt };
 }

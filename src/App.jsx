@@ -102,7 +102,18 @@ export default function App() {
               {results && (
                 <>
                   <ShareBar slug={results.slug} createdAt={results.createdAt} />
-                  <Summary totalBuy={Number(results.totalBuy)} totalSell={Number(results.totalSell)} count={results.items.length} />
+                  <Summary
+                    totalBuy={Number(results.totalBuy)}
+                    totalSell={Number(results.totalSell)}
+                    count={results.items.length}
+                    totalVolume={(() => {
+                      let vol = null;
+                      for (const item of results.items) {
+                        if (item.volumeEach != null) vol = (vol ?? 0) + item.quantity * item.volumeEach;
+                      }
+                      return vol;
+                    })()}
+                  />
                   <ResultsTable items={results.items} />
                 </>
               )}

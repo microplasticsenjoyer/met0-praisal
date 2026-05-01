@@ -270,10 +270,26 @@
   text-transform: uppercase;
 }
 
-.topPicksCards {
+/* Scrolling ticker */
+@keyframes tickerScroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.topPicksScroller {
+  overflow: hidden;
+  width: 100%;
+}
+
+.topPicksTrack {
   display: flex;
-  flex-wrap: wrap;
   gap: 8px;
+  width: max-content;
+  animation: tickerScroll 40s linear infinite;
+}
+
+.topPicksTrack:hover {
+  animation-play-state: paused;
 }
 
 .topPickCard {
@@ -313,6 +329,18 @@
   font-size: 13px;
   font-weight: bold;
   color: var(--sell);
+}
+
+.topPickValNeg {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--danger);
+}
+
+.topPickCardNeg {
+  border-color: rgba(255, 68, 68, 0.35) !important;
+  background: rgba(255, 68, 68, 0.06) !important;
 }
 
 .topPickVolVal {

@@ -21,6 +21,7 @@ thead { background: rgba(0,0,0,0.3); position: sticky; top: 0; z-index: 1; }
 .tdNum { text-align: right; color: var(--text-dim); }
 .sell { color: var(--sell) !important; }
 .buy  { color: var(--buy)  !important; }
+.volCell { color: var(--text-dim) !important; font-size: 11px; }
 
 .link { color: var(--text); text-decoration: none; transition: color 0.15s; }
 .link:hover { color: var(--accent); text-decoration: underline; }
