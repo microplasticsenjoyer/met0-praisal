@@ -45,6 +45,19 @@
   border-color: var(--accent-dim);
 }
 
+.indexSelect {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  min-width: 200px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.indexSelect:focus { outline: none; border-color: var(--accent-dim); }
+
 .numInput {
   background: var(--bg-input);
   border: 1px solid var(--border);

@@ -160,6 +160,28 @@ export default function LpStore() {
 
   const historyAbortRef = useRef(null);
 
+  // Industry-system picker. ESI's manufacturing cost index for the selected
+  // system maps to "extra cost as a fraction of input materials" — we feed
+  // it into the existing MFG TAX field as a one-click prefill.
+  const [industrySystems, setIndustrySystems] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/industry/indices")
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => { if (!cancelled && j?.systems) setIndustrySystems(j.systems); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  function applyIndustrySystem(systemIdStr) {
+    const id = parseInt(systemIdStr, 10);
+    if (!Number.isFinite(id)) return;
+    const sys = industrySystems.find((s) => s.systemId === id);
+    if (!sys) return;
+    const pct = (sys.manufacturingIndex * 100).toFixed(2);
+    setDraftMfgTax(pct);
+  }
+
   function handleCalculate() {
     const lp = Math.max(0, parseFloat(draftLpPrice) || 0);
     const st = Math.max(0, parseFloat(draftSalesTax) || 0);
@@ -477,6 +499,24 @@ export default function LpStore() {
             <label className={styles.label}>MFG TAX %</label>
             {draftInput(draftMfgTax, setDraftMfgTax)}
           </div>
+          {industrySystems.length > 0 && (
+            <div className={styles.field}>
+              <label className={styles.label}>MFG SYSTEM</label>
+              <select
+                className={styles.indexSelect}
+                defaultValue=""
+                onChange={(e) => { applyIndustrySystem(e.target.value); e.target.value = ""; }}
+                title="Pick a system to prefill MFG TAX % from its current manufacturing index"
+              >
+                <option value="">prefill from system…</option>
+                {industrySystems.map((s) => (
+                  <option key={s.systemId} value={s.systemId}>
+                    {s.systemName} — {(s.manufacturingIndex * 100).toFixed(2)}%
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className={styles.field}>
             <label className={styles.label}>&nbsp;</label>
             <button className={styles.calcBtn} onClick={handleCalculate}>CALCULATE</button>
