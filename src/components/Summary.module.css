@@ -35,6 +35,7 @@
 .label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; color: var(--text-dim); }
 .value { font-family: var(--font-mono); font-size: 22px; color: var(--text-bright); letter-spacing: -0.01em; }
 .subValue { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); letter-spacing: 0.02em; }
+.share { color: var(--accent) !important; }
 .sell  { color: var(--sell); text-shadow: 0 0 12px rgba(0,230,118,0.2); }
 .buy   { color: var(--buy);  text-shadow: 0 0 12px rgba(255,152,0,0.2); }
 .split { color: var(--accent); text-shadow: 0 0 12px rgba(0,200,255,0.15); }

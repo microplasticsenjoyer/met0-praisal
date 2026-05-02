@@ -55,19 +55,33 @@ const STATION_SHORT_NAMES = {
   60004588: "Rens",
 };
 
+function parseShares(s) {
+  const n = parseInt(s, 10);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(n, 999);
+}
+
 export default function Summary({ totalBuy, totalSell, count, totalVolume, pricesUpdatedAt, stationId }) {
   const [draftSales,  setDraftSales]  = useState(() => readStored("salesTax",  String(DEFAULT_SALES_TAX)));
   const [draftBroker, setDraftBroker] = useState(() => readStored("brokerFee", String(DEFAULT_BROKER_FEE)));
   const [salesTax,    setSalesTax]    = useState(() => parseTax(readStored("salesTax",  String(DEFAULT_SALES_TAX)),  DEFAULT_SALES_TAX));
   const [brokerFee,   setBrokerFee]   = useState(() => parseTax(readStored("brokerFee", String(DEFAULT_BROKER_FEE)), DEFAULT_BROKER_FEE));
+  // Loot-split state lives alongside the tax state so corp mates can split
+  // a payout immediately after appraising. Persisted so the same N is
+  // remembered across paste-tweaks.
+  const [draftShares, setDraftShares] = useState(() => readStored("shares", "1"));
+  const [shares,      setShares]      = useState(() => parseShares(readStored("shares", "1")));
 
   function applyTaxes() {
     const s = parseTax(draftSales,  DEFAULT_SALES_TAX);
     const b = parseTax(draftBroker, DEFAULT_BROKER_FEE);
+    const n = parseShares(draftShares);
     setSalesTax(s);
     setBrokerFee(b);
+    setShares(n);
     writeStored("salesTax",  draftSales);
     writeStored("brokerFee", draftBroker);
+    writeStored("shares",    String(n));
   }
 
   const split = (totalBuy + totalSell) / 2;
@@ -75,6 +89,10 @@ export default function Summary({ totalBuy, totalSell, count, totalVolume, price
   const netSell = totalSell * (1 - (salesTax + brokerFee) / 100);
   // Sell-to-buy-orders: hit existing buy orders, pay sales tax only.
   const netBuy = totalBuy * (1 - salesTax / 100);
+  // Per-share values use the post-fee nets so loot-split numbers reflect
+  // what each member actually receives.
+  const perShareSell = shares > 0 ? netSell / shares : netSell;
+  const perShareBuy  = shares > 0 ? netBuy  / shares : netBuy;
 
   const ageLabel = timeAgo(pricesUpdatedAt);
   const hubLabel = stationId ? (STATION_SHORT_NAMES[stationId] ?? `station ${stationId}`) : null;
@@ -108,6 +126,19 @@ export default function Summary({ totalBuy, totalSell, count, totalVolume, price
             onKeyDown={(e) => { if (e.key === "Enter") applyTaxes(); }}
           />
         </div>
+        <div className={styles.field}>
+          <label className={styles.cLabel}>SPLIT N WAYS</label>
+          <input
+            className={styles.numInput}
+            type="text"
+            inputMode="numeric"
+            value={draftShares}
+            placeholder="1"
+            onChange={(e) => setDraftShares(e.target.value)}
+            onFocus={(e) => e.target.select()}
+            onKeyDown={(e) => { if (e.key === "Enter") applyTaxes(); }}
+          />
+        </div>
         <button className={styles.applyBtn} onClick={applyTaxes}>APPLY</button>
         <div className={styles.spacer} />
         <span className={styles.cacheAge}>
@@ -126,6 +157,9 @@ export default function Summary({ totalBuy, totalSell, count, totalVolume, price
           <span className={styles.label}>SELL (min)</span>
           <span className={`${styles.value} ${styles.sell}`}>{fmt(totalSell)}</span>
           <span className={styles.subValue}>net {fmt(netSell)}</span>
+          {shares > 1 && (
+            <span className={`${styles.subValue} ${styles.share}`}>{fmt(perShareSell)} / share</span>
+          )}
         </div>
         <div className={styles.divider} />
         <div className={styles.stat}>
@@ -137,6 +171,9 @@ export default function Summary({ totalBuy, totalSell, count, totalVolume, price
           <span className={styles.label}>BUY (max)</span>
           <span className={`${styles.value} ${styles.buy}`}>{fmt(totalBuy)}</span>
           <span className={styles.subValue}>net {fmt(netBuy)}</span>
+          {shares > 1 && (
+            <span className={`${styles.subValue} ${styles.share}`}>{fmt(perShareBuy)} / share</span>
+          )}
         </div>
         {totalVolume != null && (
           <>
