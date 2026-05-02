@@ -13,6 +13,12 @@
 
 .mainWide { max-width: 1500px; }
 
+.stationRow {
+  display: flex; align-items: flex-end;
+  gap: 12px;
+  margin-bottom: -8px;
+}
+
 .loading {
   font-family: var(--font-mono);
   font-size: 13px;

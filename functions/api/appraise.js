@@ -1,10 +1,10 @@
 import { getServiceClient } from "./_supabase.js";
 import { parseItemList } from "./_parser.js";
 import { generateSlug } from "./_slug.js";
+import { JITA_STATION, isSupportedStation } from "./_stations.js";
 
 const ESI_BASE = "https://esi.evetech.net/latest";
 const FUZZWORK_BASE = "https://market.fuzzwork.co.uk/aggregates/";
-const JITA_STATION = 60003760;
 
 // Price cache TTL: 30 minutes
 const PRICE_TTL_MS = 30 * 60 * 1000;
@@ -18,10 +18,14 @@ export async function onRequestPost({ request, env }) {
   };
 
   try {
-    const { text } = await request.json();
+    const body = await request.json();
+    const text = body?.text;
     if (!text?.trim()) {
       return new Response(JSON.stringify({ error: "text field required" }), { status: 400, headers });
     }
+    // Validate optional station; fall back to Jita 4-4 if missing or unsupported.
+    const requestedStation = parseInt(body?.stationId, 10);
+    const stationId = isSupportedStation(requestedStation) ? requestedStation : JITA_STATION;
 
     const db = getServiceClient(env);
     const parsed = parseItemList(text);
@@ -36,7 +40,7 @@ export async function onRequestPost({ request, env }) {
     // ── 2. Fetch prices + volumes (cache-first) ───────────────────────────
     const typeIDs = Object.values(nameMap).filter(Boolean);
     const [priceMap, volumeMap] = await Promise.all([
-      getPrices(db, typeIDs),
+      getPrices(db, typeIDs, stationId),
       getVolumes(db, typeIDs),
     ]);
 
@@ -77,7 +81,12 @@ export async function onRequestPost({ request, env }) {
 
     const { data: appraisal, error: appraisalErr } = await db
       .from("appraisals")
-      .insert({ slug, raw_input: text, total_buy: totalBuy, total_sell: totalSell, item_count: items.length })
+      .insert({
+        slug, raw_input: text,
+        total_buy: totalBuy, total_sell: totalSell,
+        item_count: items.length,
+        station_id: stationId,
+      })
       .select("id, slug, created_at")
       .single();
 
@@ -101,6 +110,7 @@ export async function onRequestPost({ request, env }) {
       JSON.stringify({
         slug: appraisal.slug,
         createdAt: appraisal.created_at,
+        stationId,
         items, totalBuy, totalSell, pricesUpdatedAt,
       }),
       { headers }
@@ -187,62 +197,80 @@ async function esiResolveNames(names) {
   return out;
 }
 
-async function getPrices(db, typeIDs) {
+async function getPrices(db, typeIDs, stationId) {
   if (typeIDs.length === 0) return {};
 
-  // Check cache
-  const { data: cached } = await db
-    .from("price_cache")
-    .select("type_id, sell_min, sell_max, buy_min, buy_max, sell_volume, updated_at")
-    .in("type_id", typeIDs);
+  // The price_cache table is keyed only by type_id and is reserved for the
+  // default trading hub (Jita 4-4). For any other station we bypass the cache
+  // and call Fuzzwork directly — those requests are uncommon, and we'd
+  // otherwise need a composite (type_id, station_id) key + invalidation.
+  const useCache = stationId === JITA_STATION;
 
   const priceMap = {};
-  const stale = [];
-  const now = Date.now();
 
-  for (const row of cached ?? []) {
-    if (now - new Date(row.updated_at).getTime() < PRICE_TTL_MS) {
-      priceMap[row.type_id] = row;
-    } else {
-      stale.push(row.type_id);
+  if (useCache) {
+    const { data: cached } = await db
+      .from("price_cache")
+      .select("type_id, sell_min, sell_max, buy_min, buy_max, sell_volume, updated_at")
+      .in("type_id", typeIDs);
+    const now = Date.now();
+    const stale = [];
+    for (const row of cached ?? []) {
+      if (now - new Date(row.updated_at).getTime() < PRICE_TTL_MS) {
+        priceMap[row.type_id] = row;
+      } else {
+        stale.push(row.type_id);
+      }
     }
+    const missing = typeIDs.filter((id) => !(id in priceMap));
+    const toFetch = [...new Set([...missing, ...stale])];
+    if (toFetch.length > 0) {
+      const fresh = await fuzzworkPrices(toFetch, stationId);
+      const upsertRows = [];
+      for (const [idStr, data] of Object.entries(fresh)) {
+        const typeID = parseInt(idStr, 10);
+        const row = {
+          type_id: typeID,
+          sell_min: parseFloat(data.sell.min),
+          sell_max: parseFloat(data.sell.max),
+          buy_min: parseFloat(data.buy.min),
+          buy_max: parseFloat(data.buy.max),
+          sell_volume: parseInt(data.sell.volume, 10) || null,
+          updated_at: new Date().toISOString(),
+        };
+        priceMap[typeID] = row;
+        upsertRows.push(row);
+      }
+      if (upsertRows.length > 0) {
+        await db.from("price_cache").upsert(upsertRows, { onConflict: "type_id" });
+      }
+    }
+    return priceMap;
   }
 
-  const missing = typeIDs.filter((id) => !(id in priceMap));
-  const toFetch = [...new Set([...missing, ...stale])];
-
-  if (toFetch.length > 0) {
-    const fresh = await fuzzworkPrices(toFetch);
-    const upsertRows = [];
-
-    for (const [idStr, data] of Object.entries(fresh)) {
-      const typeID = parseInt(idStr, 10);
-      const row = {
-        type_id: typeID,
-        sell_min: parseFloat(data.sell.min),
-        sell_max: parseFloat(data.sell.max),
-        buy_min: parseFloat(data.buy.min),
-        buy_max: parseFloat(data.buy.max),
-        sell_volume: parseInt(data.sell.volume, 10) || null,
-        updated_at: new Date().toISOString(),
-      };
-      priceMap[typeID] = row;
-      upsertRows.push(row);
-    }
-
-    if (upsertRows.length > 0) {
-      await db.from("price_cache").upsert(upsertRows, { onConflict: "type_id" });
-    }
+  // Non-Jita: live fetch only, no caching.
+  const fresh = await fuzzworkPrices(typeIDs, stationId);
+  const liveTimestamp = new Date().toISOString();
+  for (const [idStr, data] of Object.entries(fresh)) {
+    const typeID = parseInt(idStr, 10);
+    priceMap[typeID] = {
+      type_id: typeID,
+      sell_min: parseFloat(data.sell.min),
+      sell_max: parseFloat(data.sell.max),
+      buy_min: parseFloat(data.buy.min),
+      buy_max: parseFloat(data.buy.max),
+      sell_volume: parseInt(data.sell.volume, 10) || null,
+      updated_at: liveTimestamp,
+    };
   }
-
   return priceMap;
 }
 
-async function fuzzworkPrices(typeIDs) {
+async function fuzzworkPrices(typeIDs, stationId) {
   const chunks = chunk(typeIDs, 200);
   const out = {};
   for (const c of chunks) {
-    const params = new URLSearchParams({ station: JITA_STATION, types: c.join(",") });
+    const params = new URLSearchParams({ station: stationId, types: c.join(",") });
     const res = await fetch(`${FUZZWORK_BASE}?${params}`);
     if (!res.ok) continue;
     Object.assign(out, await res.json());

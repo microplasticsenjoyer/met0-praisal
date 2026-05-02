@@ -7,7 +7,10 @@ import ShareBar from "./components/ShareBar.jsx";
 import Tabs from "./components/Tabs.jsx";
 import LpStore from "./components/LpStore.jsx";
 import CorpStore from "./components/CorpStore.jsx";
+import StationPicker, { readStoredStationId } from "./components/StationPicker.jsx";
 import styles from "./App.module.css";
+
+const DEFAULT_STATION = 60003760;
 
 const TAB_OPTIONS = [
   { value: "appraise", label: "Appraise" },
@@ -20,6 +23,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [loadingShared, setLoadingShared] = useState(false);
+  const [stationId, setStationId] = useState(() => readStoredStationId(DEFAULT_STATION));
   const [tab, setTab] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("a")) return "appraise";
@@ -66,7 +70,7 @@ export default function App() {
       const res = await fetch("/api/appraise", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, stationId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Request failed");
@@ -96,6 +100,11 @@ export default function App() {
             <div className={styles.loading}>LOADING APPRAISAL...</div>
           ) : (
             <>
+              {!results?.slug && (
+                <div className={styles.stationRow}>
+                  <StationPicker value={stationId} onChange={setStationId} />
+                </div>
+              )}
               <PasteInput
                 onAppraise={handleAppraise}
                 onClear={handleClear}
@@ -111,6 +120,7 @@ export default function App() {
                     totalSell={Number(results.totalSell)}
                     count={results.items.length}
                     pricesUpdatedAt={results.pricesUpdatedAt ?? null}
+                    stationId={results.stationId ?? null}
                     totalVolume={(() => {
                       let vol = null;
                       for (const item of results.items) {

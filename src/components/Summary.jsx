@@ -44,7 +44,18 @@ function parseTax(s, fallback) {
 const DEFAULT_SALES_TAX = 4.5;
 const DEFAULT_BROKER_FEE = 2.5;
 
-export default function Summary({ totalBuy, totalSell, count, totalVolume, pricesUpdatedAt }) {
+// Cosmetic: short labels for the trading hubs the appraiser supports. Kept
+// in sync with functions/api/_stations.js so we can show "Amarr" instead of
+// the raw station ID on saved appraisals.
+const STATION_SHORT_NAMES = {
+  60003760: "Jita",
+  60008494: "Amarr",
+  60011866: "Dodixie",
+  60005686: "Hek",
+  60004588: "Rens",
+};
+
+export default function Summary({ totalBuy, totalSell, count, totalVolume, pricesUpdatedAt, stationId }) {
   const [draftSales,  setDraftSales]  = useState(() => readStored("salesTax",  String(DEFAULT_SALES_TAX)));
   const [draftBroker, setDraftBroker] = useState(() => readStored("brokerFee", String(DEFAULT_BROKER_FEE)));
   const [salesTax,    setSalesTax]    = useState(() => parseTax(readStored("salesTax",  String(DEFAULT_SALES_TAX)),  DEFAULT_SALES_TAX));
@@ -66,6 +77,7 @@ export default function Summary({ totalBuy, totalSell, count, totalVolume, price
   const netBuy = totalBuy * (1 - salesTax / 100);
 
   const ageLabel = timeAgo(pricesUpdatedAt);
+  const hubLabel = stationId ? (STATION_SHORT_NAMES[stationId] ?? `station ${stationId}`) : null;
 
   return (
     <div className={styles.wrap}>
@@ -99,6 +111,7 @@ export default function Summary({ totalBuy, totalSell, count, totalVolume, price
         <button className={styles.applyBtn} onClick={applyTaxes}>APPLY</button>
         <div className={styles.spacer} />
         <span className={styles.cacheAge}>
+          {hubLabel ? `${hubLabel} · ` : ""}
           {ageLabel ? `prices ${ageLabel}` : "live prices"}
         </span>
       </div>

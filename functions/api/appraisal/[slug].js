@@ -16,7 +16,7 @@ export async function onRequestGet({ params, env }) {
 
   const { data: appraisal, error } = await db
     .from("appraisals")
-    .select("id, slug, total_buy, total_sell, item_count, created_at, raw_input")
+    .select("id, slug, total_buy, total_sell, item_count, created_at, raw_input, station_id")
     .eq("slug", slug)
     .single();
 
@@ -58,6 +58,7 @@ export async function onRequestGet({ params, env }) {
       totalSell: appraisal.total_sell,
       itemCount: appraisal.item_count,
       createdAt: appraisal.created_at,
+      stationId: appraisal.station_id,
       pricesUpdatedAt,
       rawInput: appraisal.raw_input,
       items: (items ?? []).map((i) => ({
