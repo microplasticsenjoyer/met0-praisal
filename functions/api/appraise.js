@@ -2,6 +2,13 @@ import { getServiceClient } from "./_supabase.js";
 import { parseItemList } from "./_parser.js";
 import { generateSlug } from "./_slug.js";
 import { JITA_STATION, isSupportedStation } from "./_stations.js";
+import { checkRateLimit, maybeReapStaleRows } from "./_rate_limit.js";
+
+// 30 appraisals per IP per 5 minutes. Generous for legit corp use, cheap
+// to bypass for legitimate burst paste sessions, and tight enough that
+// scripted abuse fills nothing meaningful before getting throttled.
+const APPRAISE_RATE_LIMIT = 30;
+const APPRAISE_RATE_WINDOW_MS = 5 * 60 * 1000;
 
 const ESI_BASE = "https://esi.evetech.net/latest";
 const FUZZWORK_BASE = "https://market.fuzzwork.co.uk/aggregates/";
@@ -18,16 +25,37 @@ export async function onRequestPost({ request, env }) {
   };
 
   try {
+    const db = getServiceClient(env);
+
+    // Rate-limit before reading the body — cheap path for hostile callers.
+    const rl = await checkRateLimit(db, request, {
+      limit: APPRAISE_RATE_LIMIT,
+      windowMs: APPRAISE_RATE_WINDOW_MS,
+    });
+    if (!rl.allowed) {
+      return new Response(
+        JSON.stringify({ error: "Rate limit exceeded; slow down a bit." }),
+        {
+          status: 429,
+          headers: { ...headers, "Retry-After": String(rl.retryAfter) },
+        }
+      );
+    }
+    // Best-effort cleanup of long-idle IP rows (1% sampling so it's free per request).
+    maybeReapStaleRows(db);
+
     const body = await request.json();
     const text = body?.text;
     if (!text?.trim()) {
       return new Response(JSON.stringify({ error: "text field required" }), { status: 400, headers });
     }
+    // Hard cap on input size — even a fleet hangar dump fits comfortably under this.
+    if (text.length > 100_000) {
+      return new Response(JSON.stringify({ error: "Input too large (max 100k chars)" }), { status: 400, headers });
+    }
     // Validate optional station; fall back to Jita 4-4 if missing or unsupported.
     const requestedStation = parseInt(body?.stationId, 10);
     const stationId = isSupportedStation(requestedStation) ? requestedStation : JITA_STATION;
-
-    const db = getServiceClient(env);
     const parsed = parseItemList(text);
     if (parsed.length === 0) {
       return new Response(JSON.stringify({ error: "No recognizable items found" }), { status: 400, headers });
