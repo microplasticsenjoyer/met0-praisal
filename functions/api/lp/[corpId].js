@@ -1,5 +1,5 @@
 import { getServiceClient } from "../_supabase.js";
-import { isSupportedCorp, LP_CORPS } from "./_corps.js";
+import { isSupportedCorp, isWrongFactionItem, LP_CORPS } from "./_corps.js";
 
 const ESI_BASE = "https://esi.evetech.net/latest";
 const FUZZWORK_BASE = "https://market.fuzzwork.co.uk/aggregates/";
@@ -30,23 +30,37 @@ export async function onRequestGet({ params, env }) {
       );
     }
 
-    const typeIds = new Set();
-    for (const o of offers) {
-      typeIds.add(o.type_id);
-      for (const r of o.required_items ?? []) typeIds.add(r.type_id);
-    }
-    const typeIdArr = [...typeIds];
+    // Resolve product names first so we can drop cross-faction items ESI
+    // sometimes returns (e.g. Federation Navy items in 24th Imperial Crusade).
+    const productTypeIdsRaw = [...new Set(offers.map((o) => o.type_id))];
+    const productNames = await resolveTypeNames(db, productTypeIdsRaw);
+    const filteredOffers = offers.filter(
+      (o) => !isWrongFactionItem(corpId, productNames[o.type_id])
+    );
 
-    // Names first so item_cache rows exist before category update touches them.
-    const nameMap = await resolveTypeNames(db, typeIdArr);
-    // Categories only needed for product types (not input materials).
-    const productTypeIds = [...new Set(offers.map((o) => o.type_id))];
+    if (filteredOffers.length === 0) {
+      return new Response(
+        JSON.stringify({ corpId, corp: LP_CORPS[corpId], offers: [], offersUpdatedAt, pricesUpdatedAt: null }),
+        { headers }
+      );
+    }
+
+    // Now resolve input-material names for the kept offers.
+    const inputTypeIds = new Set();
+    for (const o of filteredOffers) {
+      for (const r of o.required_items ?? []) inputTypeIds.add(r.type_id);
+    }
+    const inputNames = await resolveTypeNames(db, [...inputTypeIds]);
+    const nameMap = { ...productNames, ...inputNames };
+
+    const productTypeIds = [...new Set(filteredOffers.map((o) => o.type_id))];
+    const allTypeIds = [...new Set([...productTypeIds, ...inputTypeIds])];
     const [{ priceMap, updatedAt: pricesUpdatedAt }, categoryMap] = await Promise.all([
-      getPrices(db, typeIdArr),
+      getPrices(db, allTypeIds),
       resolveTypeCategories(db, productTypeIds, nameMap),
     ]);
 
-    const enriched = offers.map((o) => {
+    const enriched = filteredOffers.map((o) => {
       const product = priceMap[o.type_id] ?? null;
       const productSell = product ? Number(product.sell_min) : 0;
       const productBuy = product ? Number(product.buy_max) : 0;
