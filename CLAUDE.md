@@ -28,9 +28,7 @@ There are no tests and no linter configured.
 
 ## Architecture
 
-The project was originally a separate Express server + Vite client (see `server/` and `client/` directories). These are **dead code** — the active codebase is:
-
-- **`src/`** — React + Vite frontend (the active client)
+- **`src/`** — React + Vite frontend
 - **`functions/api/`** — Cloudflare Pages Functions (compiled to `dist/_worker.js/` by Wrangler)
 - **`supabase/migrations/`** — Postgres schema applied to Supabase project `xvmpasymvtdghgobflgz`
 
