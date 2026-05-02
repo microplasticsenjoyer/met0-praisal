@@ -76,13 +76,37 @@ function lowerBound(arr, target) {
   return lo;
 }
 
+// URL params live alongside ?tab=lp so deep-links keep working.
+function readUrlParam(key) {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get(key);
+}
+function writeUrlParams(updates) {
+  if (typeof window === "undefined") return;
+  const params = new URLSearchParams(window.location.search);
+  for (const [k, v] of Object.entries(updates)) {
+    if (v == null || v === "") params.delete(k);
+    else params.set(k, String(v));
+  }
+  const qs = params.toString();
+  const url = qs ? `?${qs}` : window.location.pathname;
+  window.history.replaceState({}, "", url);
+}
+
 export default function LpStore() {
   const { groups: CORP_GROUPS, allCorps: ALL_CORPS, loading: corpsLoading } = useCorpGroups();
-  const [corpId, setCorpId] = useState(null);
 
-  // Once corp list arrives, default to the first one if no selection yet.
+  // Hydrate corp from URL (?corp=) if present and supported.
+  const [corpId, setCorpId] = useState(() => {
+    const fromUrl = parseInt(readUrlParam("corp") ?? "", 10);
+    return Number.isFinite(fromUrl) ? fromUrl : null;
+  });
+
+  // Once corp list arrives, default to the first one if URL didn't pick.
   useEffect(() => {
-    if (corpId == null && ALL_CORPS.length > 0) setCorpId(ALL_CORPS[0].id);
+    if (corpId != null) return;
+    if (ALL_CORPS.length === 0) return;
+    setCorpId(ALL_CORPS[0].id);
   }, [ALL_CORPS, corpId]);
   const [data, setData] = useState(null);
   const [history, setHistory] = useState({});
@@ -97,8 +121,20 @@ export default function LpStore() {
     () => localStorage.getItem(STORAGE_PREFIX + "sortDir") ?? "desc"
   );
 
-  const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState(null);
+  const [search, setSearch] = useState(() => readUrlParam("q") ?? "");
+  const [categoryFilter, setCategoryFilter] = useState(() => {
+    const c = parseInt(readUrlParam("cat") ?? "", 10);
+    return Number.isFinite(c) ? c : null;
+  });
+
+  // Persist filter/search/corp to URL for deep-linking.
+  useEffect(() => {
+    writeUrlParams({
+      corp: corpId,
+      cat: categoryFilter,
+      q: search.trim() || null,
+    });
+  }, [corpId, categoryFilter, search]);
 
   // Advanced toggle — persisted to localStorage; falls back to viewport width.
   const [advanced, setAdvanced] = useState(() => {
@@ -159,7 +195,6 @@ export default function LpStore() {
       setError(null);
       setData(null);
       setHistory({});
-      setCategoryFilter(null);
       try {
         const res = await fetch(`/api/lp/${corpId}`);
         const json = await res.json();
@@ -346,6 +381,19 @@ export default function LpStore() {
     navigator.clipboard.writeText(name).catch(() => {});
     setCopied(offerId);
     setTimeout(() => setCopied((prev) => (prev === offerId ? null : prev)), 1500);
+  }
+
+  // Copy this offer's input materials as a multibuy-friendly paste
+  // (one "<qty> <name>" per line), so members can paste it into Jita
+  // multibuy directly. Uses a distinct copied-token so the per-row
+  // checkmark animation doesn't collide with copyItem's name-copy.
+  function copyMultibuy(offerId, inputs) {
+    if (!inputs?.length) return;
+    const text = inputs.map((i) => `${i.quantity} ${i.name}`).join("\n");
+    navigator.clipboard.writeText(text).catch(() => {});
+    const tag = `mb-${offerId}`;
+    setCopied(tag);
+    setTimeout(() => setCopied((prev) => (prev === tag ? null : prev)), 1500);
   }
 
   function exportTsv() {
@@ -591,6 +639,13 @@ export default function LpStore() {
                         </div>
                         {o.inputs.length > 0 && (
                           <div className={styles.inputs}>
+                            <button
+                              className={`${styles.multibuyBtn} ${copied === `mb-${o.offerId}` ? styles.multibuyBtnDone : ""}`}
+                              onClick={() => copyMultibuy(o.offerId, o.inputs)}
+                              title="Copy materials as multibuy paste"
+                            >
+                              {copied === `mb-${o.offerId}` ? "COPIED ✓" : "MULTIBUY"}
+                            </button>
                             {o.inputs.map((i) => (
                               <span key={i.typeID} className={styles.input}>
                                 {i.quantity}× {i.name}

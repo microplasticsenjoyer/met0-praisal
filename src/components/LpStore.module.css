@@ -257,6 +257,29 @@
 
 .copyBtnDone { color: var(--sell) !important; opacity: 1 !important; }
 
+.multibuyBtn {
+  background: rgba(0, 200, 255, 0.06);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 1px 6px;
+  letter-spacing: 0.06em;
+  font-family: inherit;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+
+.multibuyBtn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.multibuyBtnDone {
+  color: var(--sell) !important;
+  border-color: var(--sell) !important;
+}
+
 .offerCount {
   font-size: 10px;
   color: var(--text-dim);
