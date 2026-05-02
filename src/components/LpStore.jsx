@@ -1,26 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import styles from "./LpStore.module.css";
-
-const CORP_GROUPS = [
-  {
-    label: "Main FW Militias",
-    corps: [
-      { id: 1000110, name: "24th Imperial Crusade", faction: "Amarr Empire" },
-      { id: 1000179, name: "Federal Defence Union", faction: "Gallente Federation" },
-      { id: 1000180, name: "State Protectorate", faction: "Caldari State" },
-      { id: 1000182, name: "Tribal Liberation Force", faction: "Minmatar Republic" },
-    ],
-  },
-  {
-    label: "Pirate FW",
-    corps: [
-      { id: 1000436, name: "Malakim Zealots", faction: "Angel Cartel" },
-      { id: 1000437, name: "Commando Guri", faction: "Guristas Pirates" },
-    ],
-  },
-];
-
-const ALL_CORPS = CORP_GROUPS.flatMap((g) => g.corps);
+import { useCorpGroups } from "../lib/corps.js";
 
 // EVE category_id → friendly label for filter chips.
 const CATEGORY_LABELS = {
@@ -97,7 +77,13 @@ function lowerBound(arr, target) {
 }
 
 export default function LpStore() {
-  const [corpId, setCorpId] = useState(ALL_CORPS[0].id);
+  const { groups: CORP_GROUPS, allCorps: ALL_CORPS, loading: corpsLoading } = useCorpGroups();
+  const [corpId, setCorpId] = useState(null);
+
+  // Once corp list arrives, default to the first one if no selection yet.
+  useEffect(() => {
+    if (corpId == null && ALL_CORPS.length > 0) setCorpId(ALL_CORPS[0].id);
+  }, [ALL_CORPS, corpId]);
   const [data, setData] = useState(null);
   const [history, setHistory] = useState({});
   const [loading, setLoading] = useState(false);
@@ -166,6 +152,7 @@ export default function LpStore() {
   }
 
   useEffect(() => {
+    if (corpId == null) return;
     let cancelled = false;
     async function load() {
       setLoading(true);
@@ -400,9 +387,11 @@ export default function LpStore() {
             <label className={styles.label}>CORPORATION</label>
             <select
               className={styles.select}
-              value={corpId}
+              value={corpId ?? ""}
               onChange={(e) => setCorpId(parseInt(e.target.value, 10))}
+              disabled={corpsLoading || CORP_GROUPS.length === 0}
             >
+              {corpsLoading && <option value="">Loading…</option>}
               {CORP_GROUPS.map((g) => (
                 <optgroup key={g.label} label={g.label}>
                   {g.corps.map((c) => (

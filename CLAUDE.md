@@ -84,6 +84,8 @@ The app is an SPA. Query params drive state:
 
 ### Adding a supported LP store corporation
 
-Two places must be updated in sync:
-1. `functions/api/lp/_corps.js` — add to `LP_CORPS` object
-2. `src/components/LpStore.jsx` — add to the correct group inside the `CORP_GROUPS` array at the top of the file
+Single source of truth: `functions/api/lp/_corps.js` (the `LP_CORPS` map) plus
+`functions/api/lp/corps.js` (the `GROUPS` array that buckets them into the UI
+dropdown). The frontend fetches `/api/lp/corps` once at mount via
+`src/lib/corps.js` (`useCorpGroups`) so both LP tabs stay in sync without
+duplicating data.
