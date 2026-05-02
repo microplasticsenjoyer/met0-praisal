@@ -110,6 +110,7 @@ export default function App() {
                     totalBuy={Number(results.totalBuy)}
                     totalSell={Number(results.totalSell)}
                     count={results.items.length}
+                    pricesUpdatedAt={results.pricesUpdatedAt ?? null}
                     totalVolume={(() => {
                       let vol = null;
                       for (const item of results.items) {

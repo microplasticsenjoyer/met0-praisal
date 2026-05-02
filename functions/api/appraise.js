@@ -43,6 +43,7 @@ export async function onRequestPost({ request, env }) {
     // ── 3. Build line items ───────────────────────────────────────────────
     let totalBuy = 0;
     let totalSell = 0;
+    let pricesUpdatedAt = null;
 
     const items = parsed.map(({ name, quantity }) => {
       const typeID = nameMap[name.toLowerCase()] ?? null;
@@ -53,11 +54,22 @@ export async function onRequestPost({ request, env }) {
       const sellTotal = sellEach * quantity;
       const buyTotal = buyEach * quantity;
       const volumeEach = (typeID != null ? volumeMap[typeID] : null) ?? null;
+      const sellVolume = prices?.sell_volume ?? null;
+
+      if (prices?.updated_at) {
+        if (!pricesUpdatedAt || prices.updated_at < pricesUpdatedAt) {
+          pricesUpdatedAt = prices.updated_at;
+        }
+      }
 
       totalBuy += buyTotal;
       totalSell += sellTotal;
 
-      return { typeID, name, quantity, sellEach, buyEach, sellTotal, buyTotal, volumeEach, unknown: !typeID || !prices };
+      return {
+        typeID, name, quantity, sellEach, buyEach, sellTotal, buyTotal,
+        volumeEach, sellVolume,
+        unknown: !typeID || !prices,
+      };
     });
 
     // ── 4. Persist appraisal ──────────────────────────────────────────────
@@ -86,7 +98,11 @@ export async function onRequestPost({ request, env }) {
     );
 
     return new Response(
-      JSON.stringify({ slug: appraisal.slug, createdAt: appraisal.created_at, items, totalBuy, totalSell }),
+      JSON.stringify({
+        slug: appraisal.slug,
+        createdAt: appraisal.created_at,
+        items, totalBuy, totalSell, pricesUpdatedAt,
+      }),
       { headers }
     );
   } catch (err) {
@@ -177,7 +193,7 @@ async function getPrices(db, typeIDs) {
   // Check cache
   const { data: cached } = await db
     .from("price_cache")
-    .select("type_id, sell_min, sell_max, buy_min, buy_max, updated_at")
+    .select("type_id, sell_min, sell_max, buy_min, buy_max, sell_volume, updated_at")
     .in("type_id", typeIDs);
 
   const priceMap = {};
@@ -207,6 +223,7 @@ async function getPrices(db, typeIDs) {
         sell_max: parseFloat(data.sell.max),
         buy_min: parseFloat(data.buy.min),
         buy_max: parseFloat(data.buy.max),
+        sell_volume: parseInt(data.sell.volume, 10) || null,
         updated_at: new Date().toISOString(),
       };
       priceMap[typeID] = row;

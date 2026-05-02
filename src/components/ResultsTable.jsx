@@ -9,11 +9,28 @@ function fmt(v) {
   return v.toLocaleString("en-US", { maximumFractionDigits: 2 });
 }
 
+function fmtCount(n) {
+  if (n == null) return "—";
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return n.toLocaleString("en-US");
+}
+
 function fmtVol(m3) {
   if (m3 == null) return "—";
   if (m3 >= 1e6) return (m3 / 1e6).toFixed(2) + "M m³";
   if (m3 >= 1e3) return (m3 / 1e3).toFixed(2) + "k m³";
   return m3.toLocaleString("en-US", { maximumFractionDigits: 2 }) + " m³";
+}
+
+// True if the user is trying to value more units than the market has listed
+// at the sell-min depth. The headline quote is fiction past that point.
+function isVolumeLight(item) {
+  return (
+    item.sellVolume != null &&
+    item.sellVolume > 0 &&
+    item.quantity > item.sellVolume
+  );
 }
 
 export default function ResultsTable({ items }) {
@@ -43,43 +60,67 @@ export default function ResultsTable({ items }) {
   });
 
   const arr = (key) => sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "";
+  const lightCount = withVolume.filter(isVolumeLight).length;
 
   return (
-    <div className={styles.wrapper}>
-      <table className={styles.table}>
-        <thead>
-          <tr>
-            <th className={styles.thName} onClick={() => handleSort("name")}>ITEM{arr("name")}</th>
-            <th className={styles.thNum} onClick={() => handleSort("quantity")}>QTY{arr("quantity")}</th>
-            <th className={styles.thNum} onClick={() => handleSort("volumeTotal")}>VOLUME{arr("volumeTotal")}</th>
-            <th className={styles.thNum} onClick={() => handleSort("sellEach")}>SELL / UNIT{arr("sellEach")}</th>
-            <th className={styles.thNum} onClick={() => handleSort("buyEach")}>BUY / UNIT{arr("buyEach")}</th>
-            <th className={styles.thNum} onClick={() => handleSort("sellTotal")}>SELL TOTAL{arr("sellTotal")}</th>
-            <th className={styles.thNum} onClick={() => handleSort("buyTotal")}>BUY TOTAL{arr("buyTotal")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((item, i) => (
-            <tr key={`${item.name}-${i}`} className={item.unknown ? styles.unknown : ""}>
-              <td className={styles.tdName}>
-                {item.typeID ? (
-                  <a href={`https://www.everef.net/type/${item.typeID}`} target="_blank" rel="noopener noreferrer" className={styles.link}>
-                    {item.name}
-                  </a>
-                ) : (
-                  <span className={styles.unknownName}>{item.name} <span className={styles.unknownTag}>?</span></span>
-                )}
-              </td>
-              <td className={styles.tdNum}>{item.quantity.toLocaleString()}</td>
-              <td className={`${styles.tdNum} ${styles.volCell}`}>{fmtVol(item.volumeTotal)}</td>
-              <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(item.sellEach)}</td>
-              <td className={`${styles.tdNum} ${styles.buy}`}>{fmt(item.buyEach)}</td>
-              <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(item.sellTotal)}</td>
-              <td className={`${styles.tdNum} ${styles.buy}`}>{fmt(item.buyTotal)}</td>
+    <>
+      {lightCount > 0 && (
+        <div className={styles.warnBanner}>
+          ⚠ {lightCount} item{lightCount !== 1 ? "s" : ""} request more units than the Jita
+          sell-side currently has listed — those quotes assume depth that isn't there.
+        </div>
+      )}
+      <div className={styles.wrapper}>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th className={styles.thName} onClick={() => handleSort("name")}>ITEM{arr("name")}</th>
+              <th className={styles.thNum} onClick={() => handleSort("quantity")}>QTY{arr("quantity")}</th>
+              <th
+                className={styles.thNum}
+                onClick={() => handleSort("sellVolume")}
+                title="Total units currently listed on Jita 4-4 sell orders"
+              >
+                ON MARKET{arr("sellVolume")}
+              </th>
+              <th className={styles.thNum} onClick={() => handleSort("volumeTotal")}>VOLUME{arr("volumeTotal")}</th>
+              <th className={styles.thNum} onClick={() => handleSort("sellEach")}>SELL / UNIT{arr("sellEach")}</th>
+              <th className={styles.thNum} onClick={() => handleSort("buyEach")}>BUY / UNIT{arr("buyEach")}</th>
+              <th className={styles.thNum} onClick={() => handleSort("sellTotal")}>SELL TOTAL{arr("sellTotal")}</th>
+              <th className={styles.thNum} onClick={() => handleSort("buyTotal")}>BUY TOTAL{arr("buyTotal")}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {sorted.map((item, i) => {
+              const light = isVolumeLight(item);
+              return (
+                <tr key={`${item.name}-${i}`} className={[
+                  item.unknown ? styles.unknown : "",
+                  light ? styles.rowLight : "",
+                ].filter(Boolean).join(" ")}>
+                  <td className={styles.tdName}>
+                    {item.typeID ? (
+                      <a href={`https://www.everef.net/type/${item.typeID}`} target="_blank" rel="noopener noreferrer" className={styles.link}>
+                        {item.name}
+                      </a>
+                    ) : (
+                      <span className={styles.unknownName}>{item.name} <span className={styles.unknownTag}>?</span></span>
+                    )}
+                    {light && <span className={styles.lightTag} title="Quantity exceeds Jita sell-side depth">low depth</span>}
+                  </td>
+                  <td className={styles.tdNum}>{item.quantity.toLocaleString()}</td>
+                  <td className={`${styles.tdNum} ${light ? styles.danger : ""}`}>{fmtCount(item.sellVolume)}</td>
+                  <td className={`${styles.tdNum} ${styles.volCell}`}>{fmtVol(item.volumeTotal)}</td>
+                  <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(item.sellEach)}</td>
+                  <td className={`${styles.tdNum} ${styles.buy}`}>{fmt(item.buyEach)}</td>
+                  <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(item.sellTotal)}</td>
+                  <td className={`${styles.tdNum} ${styles.buy}`}>{fmt(item.buyTotal)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
