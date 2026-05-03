@@ -1,5 +1,6 @@
 import { getServiceClient } from "../_supabase.js";
 import { isSupportedCorp, isWrongFactionItem, LP_CORPS } from "./_corps.js";
+import { resolveBlueprintRecipes } from "./_blueprints.js";
 
 const ESI_BASE = "https://esi.evetech.net/latest";
 const FUZZWORK_BASE = "https://market.fuzzwork.co.uk/aggregates/";
@@ -45,22 +46,49 @@ export async function onRequestGet({ params, env }) {
       );
     }
 
-    // Now resolve input-material names for the kept offers.
+    // For BPC offers, resolve the manufacturing recipe so we can show the
+    // built-product price/profit instead of the (usually worthless) raw BPC.
+    const bpcTypeIds = filteredOffers
+      .filter((o) => productNames[o.type_id]?.endsWith(" Blueprint"))
+      .map((o) => o.type_id);
+    const recipes = await resolveBlueprintRecipes(db, [...new Set(bpcTypeIds)]);
+
+    // Swap each BPC offer to its built product: typeID, name, quantity all
+    // become the product's; build materials get appended to required_items
+    // so the existing input-cost / multibuy paths work unchanged.
+    const transformedOffers = filteredOffers.map((o) => {
+      const recipe = recipes[o.type_id];
+      if (!recipe) return o;
+      const buildMaterials = recipe.materials.map((m) => ({
+        type_id: m.type_id,
+        quantity: m.quantity * o.quantity,
+      }));
+      return {
+        ...o,
+        type_id: recipe.productTypeId,
+        quantity: o.quantity * recipe.productQuantity,
+        required_items: [...(o.required_items ?? []), ...buildMaterials],
+        built: true,
+        bpTypeId: o.type_id,
+      };
+    });
+
+    // Now resolve input-material names + product names for any newly-introduced
+    // type IDs (built products, build materials).
     const inputTypeIds = new Set();
-    for (const o of filteredOffers) {
+    for (const o of transformedOffers) {
       for (const r of o.required_items ?? []) inputTypeIds.add(r.type_id);
     }
-    const inputNames = await resolveTypeNames(db, [...inputTypeIds]);
-    const nameMap = { ...productNames, ...inputNames };
-
-    const productTypeIds = [...new Set(filteredOffers.map((o) => o.type_id))];
+    const productTypeIds = [...new Set(transformedOffers.map((o) => o.type_id))];
     const allTypeIds = [...new Set([...productTypeIds, ...inputTypeIds])];
+    const nameMap = await resolveTypeNames(db, allTypeIds);
+
     const [{ priceMap, updatedAt: pricesUpdatedAt }, categoryMap] = await Promise.all([
       getPrices(db, allTypeIds),
       resolveTypeCategories(db, productTypeIds, nameMap),
     ]);
 
-    const enriched = filteredOffers.map((o) => {
+    const enriched = transformedOffers.map((o) => {
       const product = priceMap[o.type_id] ?? null;
       const productSell = product ? Number(product.sell_min) : 0;
       const productBuy = product ? Number(product.buy_max) : 0;
@@ -110,6 +138,8 @@ export async function onRequestGet({ params, env }) {
         sellVolume: product ? (product.sell_volume ?? null) : null,
         categoryId: categoryMap[o.type_id] ?? null,
         unknown: !product || !inputsValid,
+        built: o.built === true,
+        bpTypeId: o.bpTypeId ?? null,
       };
     });
 
