@@ -241,6 +241,168 @@
 .inCargoCheck { color: var(--sell); font-weight: bold; font-size: 14px; }
 .partialCheck { color: #ffb84d; font-size: 11px; font-family: var(--font-mono); }
 
+/* ── Mode toggle ─────────────────────────────────────────────────────────── */
+
+.modeToggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+}
+
+.modeBtn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 8px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.modeBtn:hover { color: var(--text); }
+.modeBtn + .modeBtn { border-left: 1px solid var(--border); }
+
+.modeBtnActive {
+  color: var(--accent) !important;
+  background: rgba(0, 200, 255, 0.07);
+}
+
+/* ── Toolbar buttons ─────────────────────────────────────────────────────── */
+
+.toolbarBtns {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.toggleBtn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.toggleBtn:hover:not(:disabled) { border-color: var(--accent-dim); color: var(--text); }
+.toggleBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.toggleBtnActive {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+  background: rgba(0, 200, 255, 0.07);
+}
+
+.slugBadge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+}
+
+/* ── Ship info card ──────────────────────────────────────────────────────── */
+
+.shipInfo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: baseline;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  background: rgba(0, 200, 255, 0.03);
+  padding: 8px 14px;
+  margin-bottom: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.shipInfoName {
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.shipInfoStat {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--text);
+}
+
+.shipInfoLabel {
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ── Depth badge on item rows ───────────────────────────────────────────── */
+
+.depthBadge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: #ffb84d;
+  background: rgba(255, 152, 0, 0.07);
+  border: 1px solid rgba(255, 152, 0, 0.3);
+  letter-spacing: 0.05em;
+  vertical-align: middle;
+}
+
+/* ── Left-behind / dropped panel ────────────────────────────────────────── */
+
+.droppedPanel {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.droppedHeader {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.droppedRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0;
+}
+
+.droppedLabel {
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+  min-width: 130px;
+}
+
+.droppedItem {
+  color: var(--text);
+}
+
+.droppedQty {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.droppedMore {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
 /* ── Mobile ──────────────────────────────────────────────────────────────── */
 
 @media (max-width: 640px) {

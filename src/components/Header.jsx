@@ -10,7 +10,7 @@ export default function Header() {
           <span className={styles.logoDash}>-</span>
           <span className={styles.logoMain}>praisal</span>
         </a>
-        <div className={styles.sub}>EVE Online · Jita 4-4 · Live Market Prices</div>
+        <div className={styles.sub}>EVE Online · Live Market Prices</div>
       </div>
       <div className={styles.scanline} />
     </header>

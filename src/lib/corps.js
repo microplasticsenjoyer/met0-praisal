@@ -2,7 +2,7 @@
 // Centralises the corp data so the LpStore and CorpStore components don't
 // drift from the backend (functions/api/lp/_corps.js).
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 let corpsPromise = null;
 
@@ -32,6 +32,9 @@ export function useCorpGroups() {
     return () => { cancelled = true; };
   }, []);
 
-  const allCorps = groups.flatMap((g) => g.corps);
+  // Memoise so consumers can use `allCorps` as a stable effect dependency.
+  // Without this, every render produces a new array reference and any effect
+  // depending on it would loop with sibling effects that mutate URL/state.
+  const allCorps = useMemo(() => groups.flatMap((g) => g.corps), [groups]);
   return { groups, allCorps, loading, error };
 }

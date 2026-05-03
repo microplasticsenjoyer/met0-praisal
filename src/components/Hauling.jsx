@@ -1,15 +1,33 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import styles from "./Hauling.module.css";
 import PasteInput from "./PasteInput.jsx";
 import { HAULING_SHIPS } from "../lib/haulingShips.js";
 
 const STORAGE_PREFIX = "met0:hauling:";
+const FALLBACK_STATIONS = [
+  { id: 60003760, name: "Jita 4-4",      region: "The Forge",    short: "Jita" },
+  { id: 60008494, name: "Amarr VIII",    region: "Domain",       short: "Amarr" },
+  { id: 60011866, name: "Dodixie IX-19", region: "Sinq Laison",  short: "Dodixie" },
+  { id: 60005686, name: "Hek VIII-12",   region: "Metropolis",   short: "Hek" },
+  { id: 60004588, name: "Rens VI-8",     region: "Heimatar",     short: "Rens" },
+];
+
+let stationsPromise = null;
+function fetchStations() {
+  if (!stationsPromise) {
+    stationsPromise = fetch("/api/stations")
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error("stations fetch failed")))
+      .then((j) => j.stations ?? FALLBACK_STATIONS)
+      .catch(() => FALLBACK_STATIONS);
+  }
+  return stationsPromise;
+}
 
 function readStored(key, fallback = "") {
   try { return localStorage.getItem(STORAGE_PREFIX + key) ?? fallback; } catch { return fallback; }
 }
 function writeStored(key, value) {
-  try { localStorage.setItem(STORAGE_PREFIX + key, value); } catch {}
+  try { localStorage.setItem(STORAGE_PREFIX + key, String(value ?? "")); } catch {}
 }
 function parseStored(key, fallback = 0) {
   const v = parseFloat(readStored(key, String(fallback)));
@@ -35,7 +53,6 @@ function fmtVol(m3) {
   return m3.toLocaleString("en-US", { maximumFractionDigits: 2 }) + " m³";
 }
 
-// Group ships by group field for <optgroup> rendering (order preserved from array).
 const SHIP_GROUPS = (() => {
   const map = new Map();
   for (const ship of HAULING_SHIPS) {
@@ -45,64 +62,140 @@ const SHIP_GROUPS = (() => {
   return [...map.entries()];
 })();
 
+function readUrlParam(key) {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get(key);
+}
+function writeUrlParams(updates) {
+  if (typeof window === "undefined") return;
+  const params = new URLSearchParams(window.location.search);
+  for (const [k, v] of Object.entries(updates)) {
+    if (v == null || v === "") params.delete(k);
+    else params.set(k, String(v));
+  }
+  const qs = params.toString();
+  const url = qs ? `?${qs}` : window.location.pathname;
+  window.history.replaceState({}, "", url);
+}
+
+function parseStation(raw, fallback) {
+  const v = parseInt(raw ?? "", 10);
+  return Number.isFinite(v) ? v : fallback;
+}
+
 export default function Hauling() {
-  const [results, setResults]     = useState(null);
-  const [loading, setLoading]     = useState(false);
-  const [error, setError]         = useState(null);
+  // ── Stations list ──────────────────────────────────────────────────────
+  const [stations, setStations] = useState(FALLBACK_STATIONS);
+  useEffect(() => {
+    let cancelled = false;
+    fetchStations().then((s) => { if (!cancelled) setStations(s); });
+    return () => { cancelled = true; };
+  }, []);
 
-  const [shipId, setShipId]       = useState(() => readStored("shipId", "bustard"));
-  const [cargoInput, setCargoInput] = useState(() => readStored("cargo", ""));
+  // ── Route + ship state (URL > localStorage > default) ──────────────────
+  const [sourceStationId, setSourceStationId] = useState(() =>
+    parseStation(readUrlParam("from"), parseStation(readStored("from"), 60003760))
+  );
+  const [destStationId, setDestStationId] = useState(() =>
+    parseStation(readUrlParam("to"),   parseStation(readStored("to"),   60003760))
+  );
 
-  const [costPerM3, setCostPerM3] = useState(() => parseStored("costPerM3", 1000));
-  const [salesTax, setSalesTax]   = useState(() => parseStored("salesTax", 3.6));
+  const [shipId, setShipId]         = useState(() => readUrlParam("ship") ?? readStored("shipId", "bustard"));
+  const [cargoOverride, setCargoOverride] = useState(() => readStored("cargo", ""));
 
-  const [sortKey, setSortKey]     = useState("netProfitPerM3");
-  const [sortDir, setSortDir]     = useState("desc");
+  // ── Mode + cost inputs ─────────────────────────────────────────────────
+  const [mode, setMode] = useState(() => {
+    const m = readUrlParam("mode") ?? readStored("mode", "self");
+    return m === "courier" ? "courier" : "self";
+  });
+  const [costPerM3, setCostPerM3] = useState(() =>
+    parseFloat(readUrlParam("cm3") ?? "") || parseStored("costPerM3", 1000)
+  );
+  const [salesTax, setSalesTax]   = useState(() =>
+    parseFloat(readUrlParam("tax") ?? "") || parseStored("salesTax", 3.6)
+  );
+  const [collateralRate, setCollateralRate] = useState(() =>
+    parseFloat(readUrlParam("coll") ?? "") || parseStored("collateralRate", 1.5)
+  );
+  const [reward, setReward] = useState(() =>
+    parseFloat(readUrlParam("rwd") ?? "") || parseStored("reward", 0)
+  );
 
-  // Effective cargo: explicit override > ship base.
-  const effectiveCargo = useMemo(() => {
-    const override = parseFloat(cargoInput);
-    if (Number.isFinite(override) && override > 0) return override;
-    return HAULING_SHIPS.find((s) => s.id === shipId)?.cargo ?? 62500;
-  }, [shipId, cargoInput]);
+  // ── Budget + volume cap ────────────────────────────────────────────────
+  const [budget, setBudget] = useState(() =>
+    parseFloat(readUrlParam("bud") ?? "") || parseStored("budget", 0)
+  );
+  const [capByDepth, setCapByDepth] = useState(() => readStored("capByDepth", "1") !== "0");
 
-  function handleShipChange(id) {
-    setShipId(id);
-    setCargoInput("");
-    writeStored("shipId", id);
-    writeStored("cargo", "");
-  }
+  // ── Cargo paste ────────────────────────────────────────────────────────
+  const [cargoText, setCargoText] = useState(() => readStored("cargo_text", ""));
 
-  function handleCargoInput(val) {
-    setCargoInput(val);
-    writeStored("cargo", val);
-  }
+  // ── Result data ────────────────────────────────────────────────────────
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState(null);
+  const [slug, setSlug]       = useState(null);
+  const [savingSlug, setSavingSlug] = useState(false);
+  const [copiedShare, setCopiedShare] = useState(false);
 
-  function handleCostPerM3(val) {
-    const n = Math.max(0, parseFloat(val) || 0);
-    setCostPerM3(n);
-    writeStored("costPerM3", String(n));
-  }
+  // ── Sort state for the per-item table ──────────────────────────────────
+  const [sortKey, setSortKey]   = useState("netProfitPerM3");
+  const [sortDir, setSortDir]   = useState("desc");
 
-  function handleSalesTax(val) {
-    const n = Math.max(0, parseFloat(val) || 0);
-    setSalesTax(n);
-    writeStored("salesTax", String(n));
-  }
+  // ── Persist URL state whenever any planning input changes ──────────────
+  useEffect(() => {
+    writeUrlParams({
+      tab: "hauling",
+      a: slug,
+      from: sourceStationId,
+      to: destStationId,
+      ship: shipId,
+      mode: mode === "self" ? null : mode,
+      cm3: mode === "self" && costPerM3 ? costPerM3 : null,
+      tax: salesTax || null,
+      coll: mode === "courier" && collateralRate ? collateralRate : null,
+      rwd:  mode === "courier" && reward         ? reward         : null,
+      bud:  budget || null,
+    });
+  }, [slug, sourceStationId, destStationId, shipId, mode, costPerM3, salesTax, collateralRate, reward, budget]);
 
-  async function handleAppraise(text) {
+  // ── If a slug is in the URL on mount, hydrate cargo from /api/appraisal ─
+  // Bare `?a=<slug>` opens the Appraise tab (App.jsx); `?a=<slug>&tab=hauling`
+  // means the user copied a hauling-share link.
+  const initRanRef = useRef(false);
+  useEffect(() => {
+    if (initRanRef.current) return;
+    initRanRef.current = true;
+    const urlSlug = readUrlParam("a");
+    if (urlSlug && readUrlParam("tab") === "hauling") {
+      setSlug(urlSlug);
+      setLoading(true);
+      fetch(`/api/appraisal/${urlSlug}`)
+        .then((r) => r.ok ? r.json() : Promise.reject(new Error("Appraisal not found")))
+        .then((j) => {
+          if (j.rawInput) {
+            setCargoText(j.rawInput);
+            return runRoute(j.rawInput);
+          }
+        })
+        .catch((err) => setError(err.message))
+        .finally(() => setLoading(false));
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Run the route fetch (does NOT persist) ─────────────────────────────
+  async function runRoute(text) {
     setLoading(true);
     setError(null);
-    setResults(null);
     try {
-      const res = await fetch("/api/appraise", {
+      const res = await fetch("/api/hauling/route", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, stationId: 60003760 }),
+        body: JSON.stringify({ text, sourceStationId, destStationId }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Request failed");
-      setResults(data);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Request failed");
+      setData(json);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -110,122 +203,333 @@ export default function Hauling() {
     }
   }
 
-  function handleClear() {
-    setResults(null);
-    setError(null);
+  function handleAppraise(text) {
+    writeStored("cargo_text", text);
+    setCargoText(text);
+    setSlug(null); // editing the cargo invalidates the saved slug
+    runRoute(text);
   }
 
-  // ── Computed values ─────────────────────────────────────────────────────
+  function handleClear() {
+    setData(null);
+    setError(null);
+    setCargoText("");
+    setSlug(null);
+    writeStored("cargo_text", "");
+  }
 
+  // Re-run the route when the source/dest changes and we already have cargo.
+  useEffect(() => {
+    if (!data || !cargoText) return;
+    runRoute(cargoText);
+  }, [sourceStationId, destStationId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Save trip → /api/appraise, returns a slug; URL becomes shareable ──
+  async function handleSaveTrip() {
+    if (!cargoText) return;
+    setSavingSlug(true);
+    try {
+      const res = await fetch("/api/appraise", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: cargoText, stationId: sourceStationId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Save failed");
+      setSlug(json.slug);
+      // Copy the share URL automatically — the whole point of saving is sharing.
+      const shareUrl = `${window.location.origin}${window.location.pathname}?${new URLSearchParams({
+        tab: "hauling", a: json.slug,
+        from: String(sourceStationId), to: String(destStationId),
+        ship: shipId,
+        ...(mode === "courier" ? { mode: "courier", coll: String(collateralRate), rwd: String(reward) }
+                               : { cm3: String(costPerM3) }),
+        tax: String(salesTax),
+        ...(budget ? { bud: String(budget) } : {}),
+      }).toString()}`;
+      try { await navigator.clipboard.writeText(shareUrl); setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000); } catch {}
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingSlug(false);
+    }
+  }
+
+  // ── Persistors for typed inputs ────────────────────────────────────────
+  function handleShipChange(id) {
+    setShipId(id);
+    setCargoOverride("");
+    writeStored("shipId", id);
+    writeStored("cargo", "");
+  }
+  function handleCargoOverride(val) { setCargoOverride(val); writeStored("cargo", val); }
+  function handleNumChange(setter, key) {
+    return (val) => {
+      const n = Math.max(0, parseFloat(val) || 0);
+      setter(n);
+      writeStored(key, String(n));
+    };
+  }
+  function handleSourceChange(id)   { setSourceStationId(id); writeStored("from", String(id)); }
+  function handleDestChange(id)     { setDestStationId(id);   writeStored("to",   String(id)); }
+  function handleModeChange(m)      { setMode(m); writeStored("mode", m); }
+  function handleCapByDepth(v)      { setCapByDepth(v); writeStored("capByDepth", v ? "1" : "0"); }
+
+  // ── Derived values ─────────────────────────────────────────────────────
+  const currentShip = HAULING_SHIPS.find((s) => s.id === shipId) ?? HAULING_SHIPS[0];
+
+  const effectiveCargo = useMemo(() => {
+    const override = parseFloat(cargoOverride);
+    return Number.isFinite(override) && override > 0 ? override : (currentShip?.cargo ?? 62500);
+  }, [cargoOverride, currentShip]);
+
+  const sourceStation = stations.find((s) => s.id === sourceStationId);
+  const destStation   = stations.find((s) => s.id === destStationId);
+  const sameStation   = sourceStationId === destStationId;
+
+  // ── Step 1: per-item enrichment ────────────────────────────────────────
+  // Uses sourceSell as buy-in cost, destSell as sale price, applies sales tax,
+  // and caps qty by destSellVolume when capByDepth is on. Net profit per m³ is
+  // the planner's primary sort key.
   const enrichedItems = useMemo(() => {
-    if (!results?.items) return [];
-    return results.items.map((item) => {
+    if (!data?.items) return [];
+    return data.items.map((item) => {
       const vol = item.volumeEach;
       if (item.unknown || vol == null || vol <= 0) {
-        return { ...item, volumeTotal: null, haulCostPerUnit: null, netProfitPerUnit: null, netProfitTotal: null, netProfitPerM3: null, isProfitable: false };
+        return {
+          ...item,
+          effQty: 0,
+          volumeTotal: null,
+          sourceCostPerUnit: null,
+          destRevPerUnit: null,
+          haulCostPerUnit: null,
+          netProfitPerUnit: null,
+          netProfitPerM3: null,
+          netProfitTotal: null,
+          isProfitable: false,
+          depthLimited: false,
+          sourceCostTotal: 0,
+        };
       }
-      const haulCostPerUnit  = vol * costPerM3;
-      const taxAmount        = item.sellEach * (salesTax / 100);
-      const netProfitPerUnit = item.sellEach - haulCostPerUnit - taxAmount;
-      const volumeTotal      = vol * item.quantity;
-      const netProfitPerM3   = netProfitPerUnit / vol;
-      const netProfitTotal   = netProfitPerUnit * item.quantity;
-      return { ...item, volumeTotal, haulCostPerUnit, netProfitPerUnit, netProfitTotal, netProfitPerM3, isProfitable: netProfitPerUnit > 0 };
+
+      // Cap each stack at destination market depth (when enabled). We cap at
+      // 50% of listed sell volume — full depth is fiction once you start
+      // pushing orders and other sellers undercut you.
+      const depthCap = item.destSellVolume != null ? Math.floor(item.destSellVolume * 0.5) : null;
+      const effQty = capByDepth && depthCap != null
+        ? Math.max(0, Math.min(item.quantity, depthCap))
+        : item.quantity;
+      const depthLimited = capByDepth && depthCap != null && depthCap < item.quantity;
+
+      const sourceCostPerUnit = item.sourceSell;
+      const destRevPerUnit    = item.destSell * (1 - salesTax / 100);
+
+      const volumeTotal       = vol * effQty;
+      const sourceCostTotal   = sourceCostPerUnit * effQty;
+
+      // Haul cost is set at the trip level (see below); the per-unit slot is
+      // filled in step 2 once we know totalCargoVolume / totalCollateral.
+      return {
+        ...item,
+        effQty,
+        volumeTotal,
+        sourceCostPerUnit,
+        destRevPerUnit,
+        sourceCostTotal,
+        depthLimited,
+        // Placeholders refined in step 2:
+        haulCostPerUnit: null,
+        netProfitPerUnit: null,
+        netProfitPerM3: null,
+        netProfitTotal: null,
+        isProfitable: false,
+      };
     });
-  }, [results, costPerM3, salesTax]);
+  }, [data, capByDepth, salesTax]);
 
+  // ── Step 2: trip-level haul cost → re-flow through items ───────────────
+  // Self-haul: haulCostPerUnit = volumeEach × costPerM3 (independent of trip
+  // composition). Courier: collateral × rate% / qty + reward / cargoCapacity
+  // (proportional to value + flat reward spread over m³). For courier we use
+  // the SHIP'S cargo capacity (not in-cargo m³) because the reward is paid
+  // even if the hauler is half full.
+  const items = useMemo(() => {
+    return enrichedItems.map((it) => {
+      if (it.volumeTotal == null) return it;
+
+      let haulCostPerUnit;
+      if (mode === "self") {
+        haulCostPerUnit = it.volumeEach * costPerM3;
+      } else {
+        // Courier: collateral cost based on item value at source, plus a
+        // proportional slice of the flat reward weighted by volume.
+        const collateralCost = it.sourceCostPerUnit * (collateralRate / 100);
+        const rewardPerM3    = effectiveCargo > 0 ? reward / effectiveCargo : 0;
+        haulCostPerUnit      = collateralCost + it.volumeEach * rewardPerM3;
+      }
+
+      const netProfitPerUnit = it.destRevPerUnit - it.sourceCostPerUnit - haulCostPerUnit;
+      const netProfitPerM3   = netProfitPerUnit / it.volumeEach;
+      const netProfitTotal   = netProfitPerUnit * it.effQty;
+
+      return {
+        ...it,
+        haulCostPerUnit,
+        netProfitPerUnit,
+        netProfitPerM3,
+        netProfitTotal,
+        isProfitable: netProfitPerUnit > 0,
+      };
+    });
+  }, [enrichedItems, mode, costPerM3, collateralRate, reward, effectiveCargo]);
+
+  // ── Step 3: cargo-fill plan (greedy by net ISK/m³, capped by m³ + ISK) ─
   const cargoFillPlan = useMemo(() => {
-    const empty = { inCargo: new Set(), partialItem: null, partialFraction: 0, cargoUsed: 0, remaining: effectiveCargo, totalProfit: 0 };
-    if (!enrichedItems.length || effectiveCargo <= 0) return empty;
+    const empty = {
+      inCargo: new Set(), partialItem: null, partialFraction: 0, partialQty: 0,
+      cargoUsed: 0, remaining: effectiveCargo,
+      totalProfit: 0, totalSourceCost: 0, totalRevenue: 0, totalHaulCost: 0,
+      droppedByCargo: [], droppedByBudget: [], droppedNoMargin: [],
+    };
+    if (!items.length || effectiveCargo <= 0) return empty;
 
-    const profitable = enrichedItems
-      .filter((i) => i.isProfitable && i.volumeTotal != null && i.volumeTotal > 0)
+    const profitable = items
+      .filter((i) => i.isProfitable && i.volumeTotal != null && i.volumeTotal > 0 && i.effQty > 0)
       .sort((a, b) => b.netProfitPerM3 - a.netProfitPerM3);
 
-    if (!profitable.length) return empty;
-
     const inCargo = new Set();
-    let remaining  = effectiveCargo;
+    let remaining = effectiveCargo;
+    let budgetRemaining = budget > 0 ? budget : Infinity;
     let totalProfit = 0;
-    let cargoUsed   = 0;
+    let totalSourceCost = 0;
+    let totalRevenue = 0;
+    let totalHaulCost = 0;
+    let cargoUsed = 0;
     let partialItem = null;
     let partialFraction = 0;
+    let partialQty = 0;
+    const droppedByCargo = [];
+    const droppedByBudget = [];
 
     for (const item of profitable) {
-      if (item.volumeTotal <= remaining) {
+      const fitsCargo  = item.volumeTotal <= remaining;
+      const fitsBudget = item.sourceCostTotal <= budgetRemaining;
+
+      if (fitsCargo && fitsBudget) {
         inCargo.add(item.typeID);
-        remaining    -= item.volumeTotal;
-        totalProfit  += item.netProfitTotal;
-        cargoUsed    += item.volumeTotal;
-      } else if (remaining > 0 && item.volumeEach > 0) {
-        const partialQty = Math.floor(remaining / item.volumeEach);
-        if (partialQty > 0) {
-          partialItem     = item.typeID;
-          partialFraction = partialQty / item.quantity;
-          totalProfit    += item.netProfitPerUnit * partialQty;
-          cargoUsed      += item.volumeEach * partialQty;
-          remaining      -= item.volumeEach * partialQty;
-        }
-        break;
+        remaining        -= item.volumeTotal;
+        budgetRemaining  -= item.sourceCostTotal;
+        cargoUsed        += item.volumeTotal;
+        totalProfit      += item.netProfitTotal;
+        totalSourceCost  += item.sourceCostTotal;
+        totalRevenue     += item.destRevPerUnit * item.effQty;
+        totalHaulCost    += item.haulCostPerUnit * item.effQty;
+        continue;
       }
+
+      // Compute the largest partial qty that fits both caps.
+      const maxByCargo  = item.volumeEach > 0       ? Math.floor(remaining       / item.volumeEach)       : 0;
+      const maxByBudget = item.sourceCostPerUnit > 0 ? Math.floor(budgetRemaining / item.sourceCostPerUnit) : item.effQty;
+      const qty = Math.max(0, Math.min(item.effQty, maxByCargo, maxByBudget));
+
+      if (qty > 0 && partialItem == null) {
+        partialItem     = item.typeID;
+        partialQty      = qty;
+        partialFraction = qty / item.effQty;
+        const partialVol  = item.volumeEach   * qty;
+        const partialCost = item.sourceCostPerUnit * qty;
+        cargoUsed        += partialVol;
+        remaining        -= partialVol;
+        budgetRemaining  -= partialCost;
+        totalProfit      += item.netProfitPerUnit * qty;
+        totalSourceCost  += partialCost;
+        totalRevenue     += item.destRevPerUnit * qty;
+        totalHaulCost    += item.haulCostPerUnit * qty;
+      }
+
+      // Record what got dropped and why so the user can see it.
+      if (!fitsCargo)  droppedByCargo.push({ ...item, qtyDropped: item.effQty - qty });
+      if (!fitsBudget) droppedByBudget.push({ ...item, qtyDropped: item.effQty - qty });
+
+      // Greedy continues — a smaller item later in the list may still fit even
+      // if the current heavy/expensive one didn't. We DON'T break here, which
+      // means partialItem locks to the first item that couldn't fit fully but
+      // had room for some.
     }
 
-    return { inCargo, partialItem, partialFraction, cargoUsed, remaining, totalProfit };
-  }, [enrichedItems, effectiveCargo]);
+    const droppedNoMargin = items.filter((i) => !i.isProfitable && i.netProfitPerM3 != null);
+    return {
+      inCargo, partialItem, partialFraction, partialQty,
+      cargoUsed, remaining,
+      totalProfit, totalSourceCost, totalRevenue, totalHaulCost,
+      droppedByCargo, droppedByBudget, droppedNoMargin,
+    };
+  }, [items, effectiveCargo, budget]);
 
+  // ── Sorted view ────────────────────────────────────────────────────────
   const sortedItems = useMemo(() => {
-    const arr = [...enrichedItems];
+    const arr = [...items];
     arr.sort((a, b) => {
       let av = a[sortKey], bv = b[sortKey];
       if (av == null && bv == null) return 0;
       if (av == null) return 1;
       if (bv == null) return -1;
+      if (typeof av === "string") av = av.toLowerCase();
+      if (typeof bv === "string") bv = bv.toLowerCase();
       if (av < bv) return sortDir === "asc" ? -1 : 1;
       if (av > bv) return sortDir === "asc" ? 1 : -1;
       return 0;
     });
     return arr;
-  }, [enrichedItems, sortKey, sortDir]);
+  }, [items, sortKey, sortDir]);
 
-  const summaryStats = useMemo(() => {
-    const totalVolume    = enrichedItems.reduce((s, i) => s + (i.volumeTotal ?? 0), 0);
-    const profitableCount = enrichedItems.filter((i) => i.isProfitable).length;
-    const unknownCount   = (results?.items?.length ?? 0) - enrichedItems.filter((i) => !i.unknown).length;
-    const cargoFillPct   = effectiveCargo > 0 ? (cargoFillPlan.cargoUsed / effectiveCargo) * 100 : 0;
-    return { totalItems: enrichedItems.length, unknownCount, totalVolume, profitableCount, cargoFillPct };
-  }, [enrichedItems, cargoFillPlan, effectiveCargo, results]);
+  const summary = useMemo(() => {
+    const totalVolume = items.reduce((s, i) => s + (i.volumeTotal ?? 0), 0);
+    const profitableCount = items.filter((i) => i.isProfitable).length;
+    const unknownCount = (data?.items?.length ?? 0) - items.filter((i) => !i.unknown).length;
+    const cargoFillPct = effectiveCargo > 0 ? (cargoFillPlan.cargoUsed / effectiveCargo) * 100 : 0;
+    return { totalItems: items.length, unknownCount, totalVolume, profitableCount, cargoFillPct };
+  }, [items, cargoFillPlan, effectiveCargo, data]);
 
   function handleSort(key) {
     setSortDir((d) => sortKey === key ? (d === "desc" ? "asc" : "desc") : "desc");
     setSortKey(key);
   }
-
   function arr(key) {
     if (sortKey !== key) return null;
     return <span style={{ marginLeft: 4 }}>{sortDir === "desc" ? "▼" : "▲"}</span>;
   }
 
-  const currentShip = HAULING_SHIPS.find((s) => s.id === shipId);
+  const sourceShort = sourceStation?.short ?? "src";
+  const destShort   = destStation?.short   ?? "dst";
 
   return (
     <>
       {/* ── Controls ─────────────────────────────────────────────────── */}
       <div className={styles.controls}>
+        {/* Route */}
+        <div className={styles.shipGroup}>
+          <div className={styles.field}>
+            <label className={styles.label}>FROM (BUY)</label>
+            <select className={styles.select} value={sourceStationId} onChange={(e) => handleSourceChange(parseInt(e.target.value, 10))}>
+              {stations.map((s) => <option key={s.id} value={s.id}>{s.name} — {s.region}</option>)}
+            </select>
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>TO (SELL)</label>
+            <select className={styles.select} value={destStationId} onChange={(e) => handleDestChange(parseInt(e.target.value, 10))}>
+              {stations.map((s) => <option key={s.id} value={s.id}>{s.name} — {s.region}</option>)}
+            </select>
+          </div>
+        </div>
+        {/* Ship */}
         <div className={styles.shipGroup}>
           <div className={styles.field}>
             <label className={styles.label}>SHIP</label>
-            <select
-              className={styles.select}
-              value={shipId}
-              onChange={(e) => handleShipChange(e.target.value)}
-            >
+            <select className={styles.select} value={shipId} onChange={(e) => handleShipChange(e.target.value)}>
               {SHIP_GROUPS.map(([group, ships]) => (
                 <optgroup key={group} label={group}>
-                  {ships.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} — {fmtVol(s.cargo)}
-                    </option>
-                  ))}
+                  {ships.map((s) => <option key={s.id} value={s.id}>{s.name} — {fmtVol(s.cargo)}</option>)}
                 </optgroup>
               ))}
             </select>
@@ -236,104 +540,189 @@ export default function Hauling() {
               type="text"
               inputMode="decimal"
               className={styles.numInput}
-              placeholder={currentShip ? String(currentShip.cargo) : ""}
-              value={cargoInput}
-              onChange={(e) => handleCargoInput(e.target.value)}
+              placeholder={String(currentShip?.cargo ?? "")}
+              value={cargoOverride}
+              onChange={(e) => handleCargoOverride(e.target.value)}
               onFocus={(e) => e.target.select()}
-              style={{ width: 140 }}
-            />
-          </div>
-        </div>
-        <div className={styles.costGroup}>
-          <div className={styles.field}>
-            <label className={styles.label}>HAUL COST (ISK/m³)</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              className={styles.numInput}
-              value={costPerM3 || ""}
-              placeholder="0"
-              onChange={(e) => handleCostPerM3(e.target.value)}
-              onFocus={(e) => e.target.select()}
-              style={{ width: 130 }}
-            />
-          </div>
-          <div className={styles.field}>
-            <label className={styles.label}>SALES TAX %</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              className={styles.numInput}
-              value={salesTax || ""}
-              placeholder="0"
-              onChange={(e) => handleSalesTax(e.target.value)}
-              onFocus={(e) => e.target.select()}
+              style={{ width: 120 }}
             />
           </div>
         </div>
       </div>
 
-      {/* ── Paste input ──────────────────────────────────────────────── */}
-      <PasteInput
-        onAppraise={handleAppraise}
-        onClear={handleClear}
-        loading={loading}
-      />
+      {/* Mode switch + cost inputs */}
+      <div className={styles.controls}>
+        <div className={styles.modeToggle} role="group" aria-label="Hauling cost model">
+          <button
+            className={`${styles.modeBtn} ${mode === "self" ? styles.modeBtnActive : ""}`}
+            onClick={() => handleModeChange("self")}
+          >SELF-HAUL</button>
+          <button
+            className={`${styles.modeBtn} ${mode === "courier" ? styles.modeBtnActive : ""}`}
+            onClick={() => handleModeChange("courier")}
+          >COURIER CONTRACT</button>
+        </div>
+        {mode === "self" ? (
+          <div className={styles.costGroup}>
+            <div className={styles.field}>
+              <label className={styles.label}>HAUL COST (ISK/m³)</label>
+              <input type="text" inputMode="decimal" className={styles.numInput}
+                value={costPerM3 || ""} placeholder="0"
+                onChange={(e) => handleNumChange(setCostPerM3, "costPerM3")(e.target.value)}
+                onFocus={(e) => e.target.select()} style={{ width: 130 }} />
+            </div>
+            <div className={styles.field}>
+              <label className={styles.label}>SALES TAX %</label>
+              <input type="text" inputMode="decimal" className={styles.numInput}
+                value={salesTax || ""} placeholder="0"
+                onChange={(e) => handleNumChange(setSalesTax, "salesTax")(e.target.value)}
+                onFocus={(e) => e.target.select()} />
+            </div>
+          </div>
+        ) : (
+          <div className={styles.costGroup}>
+            <div className={styles.field}>
+              <label className={styles.label}>COLLATERAL %</label>
+              <input type="text" inputMode="decimal" className={styles.numInput}
+                value={collateralRate || ""} placeholder="1.5"
+                onChange={(e) => handleNumChange(setCollateralRate, "collateralRate")(e.target.value)}
+                onFocus={(e) => e.target.select()} />
+            </div>
+            <div className={styles.field}>
+              <label className={styles.label}>REWARD (ISK)</label>
+              <input type="text" inputMode="decimal" className={styles.numInput}
+                value={reward || ""} placeholder="0"
+                onChange={(e) => handleNumChange(setReward, "reward")(e.target.value)}
+                onFocus={(e) => e.target.select()} style={{ width: 130 }} />
+            </div>
+            <div className={styles.field}>
+              <label className={styles.label}>SALES TAX %</label>
+              <input type="text" inputMode="decimal" className={styles.numInput}
+                value={salesTax || ""} placeholder="0"
+                onChange={(e) => handleNumChange(setSalesTax, "salesTax")(e.target.value)}
+                onFocus={(e) => e.target.select()} />
+            </div>
+          </div>
+        )}
+        <div className={styles.costGroup}>
+          <div className={styles.field}>
+            <label className={styles.label}>BUDGET (ISK)</label>
+            <input type="text" inputMode="decimal" className={styles.numInput}
+              value={budget || ""} placeholder="no cap"
+              onChange={(e) => handleNumChange(setBudget, "budget")(e.target.value)}
+              onFocus={(e) => e.target.select()} style={{ width: 130 }}
+              title="Optional cap on total source-buy ISK. Leaves money for you to keep, in case you don't want to spend everything." />
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>&nbsp;</label>
+            <button
+              className={`${styles.toggleBtn} ${capByDepth ? styles.toggleBtnActive : ""}`}
+              onClick={() => handleCapByDepth(!capByDepth)}
+              title="Cap each stack at half of destination sell-side depth so the planner doesn't recommend dumps that the market can't absorb."
+            >
+              {capByDepth ? "DEPTH-AWARE ✓" : "DEPTH-AWARE"}
+            </button>
+          </div>
+        </div>
+      </div>
 
-      {error  && <div className={styles.error}>⚠ {error}</div>}
-      {loading && <div className={styles.loading}>APPRAISING CARGO...</div>}
+      {/* Ship info card — shows EHP / align / warp / fuel right under controls */}
+      {currentShip && (
+        <div className={styles.shipInfo}>
+          <span className={styles.shipInfoName}>{currentShip.name}</span>
+          <span className={styles.shipInfoStat}><span className={styles.shipInfoLabel}>EHP</span>{currentShip.ehp.toLocaleString()}</span>
+          <span className={styles.shipInfoStat}><span className={styles.shipInfoLabel}>ALIGN</span>{currentShip.align.toFixed(1)} s</span>
+          <span className={styles.shipInfoStat}><span className={styles.shipInfoLabel}>WARP</span>{currentShip.warp.toFixed(2)} AU/s</span>
+          <span className={styles.shipInfoStat}><span className={styles.shipInfoLabel}>HOLD</span>{fmtVol(currentShip.cargo)}</span>
+          {currentShip.fuel && (
+            <span className={styles.shipInfoStat}><span className={styles.shipInfoLabel}>JUMP FUEL</span>{currentShip.fuel}</span>
+          )}
+        </div>
+      )}
+
+      {/* ── Paste input ──────────────────────────────────────────────── */}
+      <PasteInput onAppraise={handleAppraise} onClear={handleClear} loading={loading} prefill={cargoText} />
+
+      {error && <div className={styles.error}>⚠ {error}</div>}
+      {loading && <div className={styles.loading}>FETCHING ROUTE PRICES...</div>}
 
       {/* ── Results ──────────────────────────────────────────────────── */}
-      {results && !loading && (
+      {data && !loading && (
         <>
+          {sameStation && (
+            <div className={styles.warnBanner}>
+              FROM and TO are the same station — there's no arbitrage path. Pick different stations to plan a haul.
+            </div>
+          )}
           {/* Summary cards */}
           <div className={styles.summaryCards}>
             <div className={styles.summaryCard}>
-              <span className={styles.cardLabel}>ITEMS</span>
-              <span className={styles.cardValue}>{summaryStats.totalItems.toLocaleString()}</span>
-              {summaryStats.unknownCount > 0 && (
-                <span className={styles.cardSub}>{summaryStats.unknownCount} unresolved</span>
-              )}
+              <span className={styles.cardLabel}>ROUTE</span>
+              <span className={styles.cardValue}>{sourceShort} → {destShort}</span>
+              <span className={styles.cardSub}>buy → sell</span>
             </div>
             <div className={styles.summaryCard}>
-              <span className={styles.cardLabel}>TOTAL VOLUME</span>
-              <span className={styles.cardValue}>{fmtVol(summaryStats.totalVolume)}</span>
+              <span className={styles.cardLabel}>ITEMS</span>
+              <span className={styles.cardValue}>{summary.totalItems.toLocaleString()}</span>
+              {summary.unknownCount > 0 && <span className={styles.cardSub}>{summary.unknownCount} unresolved</span>}
+            </div>
+            <div className={styles.summaryCard}>
+              <span className={styles.cardLabel}>BUY-IN COST</span>
+              <span className={styles.cardValue}>{fmt(cargoFillPlan.totalSourceCost)}</span>
+              <span className={styles.cardSub}>at {sourceShort}</span>
+            </div>
+            <div className={styles.summaryCard}>
+              <span className={styles.cardLabel}>HAUL COST</span>
+              <span className={styles.cardValue}>{fmt(cargoFillPlan.totalHaulCost)}</span>
+              <span className={styles.cardSub}>{mode === "self" ? "self-haul" : "courier"}</span>
             </div>
             <div className={styles.summaryCard}>
               <span className={styles.cardLabel}>TRIP PROFIT</span>
-              <span className={`${styles.cardValue} ${cargoFillPlan.totalProfit >= 0 ? styles.cardValueSell : ""}`}>
+              <span className={`${styles.cardValue} ${cargoFillPlan.totalProfit >= 0 ? styles.cardValueSell : styles.danger}`}>
                 {fmt(cargoFillPlan.totalProfit)}
               </span>
-              <span className={styles.cardSub}>at {fmtVol(effectiveCargo)} cargo</span>
+              <span className={styles.cardSub}>after tax + haul</span>
             </div>
             <div className={styles.cargoCard}>
               <span className={styles.cardLabel}>CARGO USED</span>
-              <span className={styles.cardValue}>
-                {fmtVol(cargoFillPlan.cargoUsed)} / {fmtVol(effectiveCargo)}
-              </span>
+              <span className={styles.cardValue}>{fmtVol(cargoFillPlan.cargoUsed)} / {fmtVol(effectiveCargo)}</span>
               <div className={styles.progressBarWrap}>
-                <div
-                  className={styles.progressFill}
-                  style={{ width: `${Math.min(summaryStats.cargoFillPct, 100)}%` }}
-                />
+                <div className={styles.progressFill} style={{ width: `${Math.min(summary.cargoFillPct, 100)}%` }} />
               </div>
-              <span className={styles.cardSub}>{summaryStats.cargoFillPct.toFixed(1)}% full</span>
+              <span className={styles.cardSub}>{summary.cargoFillPct.toFixed(1)}% full</span>
             </div>
           </div>
 
-          {summaryStats.profitableCount === 0 && (
+          {summary.profitableCount === 0 && (
             <div className={styles.warnBanner}>
-              No items are profitable at {costPerM3.toLocaleString()} ISK/m³ + {salesTax}% tax. Lower the hauling cost or tax rate.
+              No items are profitable on this route at current settings.
             </div>
           )}
 
+          {/* Save / share strip */}
           <div className={styles.tableToolbar}>
             <span className={styles.meta}>
-              {enrichedItems.length} items · {summaryStats.profitableCount} profitable
-              {summaryStats.unknownCount > 0 && ` · ${summaryStats.unknownCount} unresolved`}
+              {items.length} items · {summary.profitableCount} profitable
+              {summary.unknownCount > 0 && ` · ${summary.unknownCount} unresolved`}
             </span>
+            <div className={styles.toolbarBtns}>
+              <button
+                className={styles.toggleBtn}
+                onClick={handleSaveTrip}
+                disabled={savingSlug || !cargoText}
+                title="Save this trip and copy a shareable link to clipboard"
+              >
+                {savingSlug ? "SAVING…" : copiedShare ? "LINK COPIED ✓" : slug ? "RE-SAVE TRIP" : "SAVE TRIP"}
+              </button>
+              {slug && (
+                <span className={styles.slugBadge} title="Trip slug — anyone with the URL can re-load this exact cargo + route">
+                  /?a={slug}
+                </span>
+              )}
+            </div>
           </div>
 
+          {/* Per-item table */}
           <div className={styles.wrapper}>
             <table className={styles.table}>
               <thead>
@@ -341,9 +730,10 @@ export default function Hauling() {
                   <th className={styles.thName} onClick={() => handleSort("name")}>ITEM {arr("name")}</th>
                   <th className={styles.thNum}  onClick={() => handleSort("quantity")}>QTY {arr("quantity")}</th>
                   <th className={styles.thNum}  onClick={() => handleSort("volumeEach")}>VOL/UNIT {arr("volumeEach")}</th>
-                  <th className={styles.thNum}  onClick={() => handleSort("volumeTotal")}>TOTAL VOL {arr("volumeTotal")}</th>
-                  <th className={styles.thNum}  onClick={() => handleSort("sellEach")}>SELL/UNIT {arr("sellEach")}</th>
-                  <th className={styles.thNum}  onClick={() => handleSort("haulCostPerUnit")}>HAUL COST {arr("haulCostPerUnit")}</th>
+                  <th className={styles.thNum}  onClick={() => handleSort("sourceSell")}>{sourceShort.toUpperCase()} BUY {arr("sourceSell")}</th>
+                  <th className={styles.thNum}  onClick={() => handleSort("destSell")}>{destShort.toUpperCase()} SELL {arr("destSell")}</th>
+                  <th className={styles.thNum}  onClick={() => handleSort("destSellVolume")}>DEPTH {arr("destSellVolume")}</th>
+                  <th className={styles.thNum}  onClick={() => handleSort("haulCostPerUnit")}>HAUL {arr("haulCostPerUnit")}</th>
                   <th className={styles.thNum}  onClick={() => handleSort("netProfitTotal")}>NET PROFIT {arr("netProfitTotal")}</th>
                   <th className={`${styles.thNum} ${styles.thHighlight}`} onClick={() => handleSort("netProfitPerM3")}>ISK/m³ {arr("netProfitPerM3")}</th>
                   <th className={styles.thCargo}>IN CARGO</th>
@@ -354,26 +744,27 @@ export default function Hauling() {
                   const inCargo  = cargoFillPlan.inCargo.has(item.typeID);
                   const isPartial = cargoFillPlan.partialItem === item.typeID;
                   const rowClass = [
-                    inCargo                                      ? styles.rowInCargo      : "",
-                    isPartial                                    ? styles.rowPartial      : "",
+                    inCargo                                          ? styles.rowInCargo      : "",
+                    isPartial                                        ? styles.rowPartial      : "",
                     !item.isProfitable && item.netProfitPerM3 != null ? styles.rowUnprofitable : "",
                   ].filter(Boolean).join(" ");
                   return (
                     <tr key={`${item.typeID}-${i}`} className={rowClass}>
                       <td className={styles.tdName}>
-                        <a
-                          className={styles.link}
-                          href={`https://www.everef.net/type/${item.typeID}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
+                        <a className={styles.link} href={`https://www.everef.net/type/${item.typeID}`} target="_blank" rel="noopener noreferrer">
                           {item.name}
                         </a>
+                        {item.depthLimited && (
+                          <span className={styles.depthBadge} title={`Capped to ${item.effQty.toLocaleString()} of ${item.quantity.toLocaleString()} — sell-side depth at ${destShort} is only ${item.destSellVolume?.toLocaleString() ?? 0}`}>
+                            ✂ {item.effQty.toLocaleString()}/{item.quantity.toLocaleString()}
+                          </span>
+                        )}
                       </td>
                       <td className={styles.tdNum}>{item.quantity.toLocaleString()}</td>
                       <td className={styles.tdNum}>{item.volumeEach != null ? fmtVol(item.volumeEach) : "—"}</td>
-                      <td className={styles.tdNum}>{item.volumeTotal != null ? fmtVol(item.volumeTotal) : "—"}</td>
-                      <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(item.sellEach)}</td>
+                      <td className={styles.tdNum}>{fmt(item.sourceSell)}</td>
+                      <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(item.destSell)}</td>
+                      <td className={styles.tdNum}>{item.destSellVolume != null ? fmt(item.destSellVolume) : "—"}</td>
                       <td className={styles.tdNum}>{item.haulCostPerUnit != null ? fmt(item.haulCostPerUnit) : "—"}</td>
                       <td className={`${styles.tdNum} ${item.netProfitTotal != null ? (item.netProfitTotal >= 0 ? styles.sell : styles.danger) : ""}`}>
                         {item.netProfitTotal != null ? fmt(item.netProfitTotal) : "—"}
@@ -384,9 +775,7 @@ export default function Hauling() {
                       <td className={styles.tdCargo}>
                         {inCargo   && <span className={styles.inCargoCheck}>✓</span>}
                         {isPartial && (
-                          <span className={styles.partialCheck}>
-                            ~{Math.round(cargoFillPlan.partialFraction * 100)}%
-                          </span>
+                          <span className={styles.partialCheck}>~{Math.round(cargoFillPlan.partialFraction * 100)}%</span>
                         )}
                       </td>
                     </tr>
@@ -395,6 +784,41 @@ export default function Hauling() {
               </tbody>
             </table>
           </div>
+
+          {/* Dropped items breakdown */}
+          {(cargoFillPlan.droppedByCargo.length > 0 || cargoFillPlan.droppedByBudget.length > 0 || cargoFillPlan.droppedNoMargin.length > 0) && (
+            <div className={styles.droppedPanel}>
+              <div className={styles.droppedHeader}>LEFT BEHIND</div>
+              {cargoFillPlan.droppedByCargo.length > 0 && (
+                <div className={styles.droppedRow}>
+                  <span className={styles.droppedLabel}>cargo full:</span>
+                  {cargoFillPlan.droppedByCargo.slice(0, 5).map((d) => (
+                    <span key={`c-${d.typeID}`} className={styles.droppedItem} title={`${d.qtyDropped.toLocaleString()} units couldn't fit`}>
+                      {d.name} <span className={styles.droppedQty}>({fmt(d.netProfitPerM3)} isk/m³)</span>
+                    </span>
+                  ))}
+                  {cargoFillPlan.droppedByCargo.length > 5 && <span className={styles.droppedMore}>+{cargoFillPlan.droppedByCargo.length - 5} more</span>}
+                </div>
+              )}
+              {cargoFillPlan.droppedByBudget.length > 0 && (
+                <div className={styles.droppedRow}>
+                  <span className={styles.droppedLabel}>budget exhausted:</span>
+                  {cargoFillPlan.droppedByBudget.slice(0, 5).map((d) => (
+                    <span key={`b-${d.typeID}`} className={styles.droppedItem} title={`needed ${fmt(d.sourceCostTotal)} ISK`}>
+                      {d.name} <span className={styles.droppedQty}>({fmt(d.sourceCostTotal)} isk)</span>
+                    </span>
+                  ))}
+                  {cargoFillPlan.droppedByBudget.length > 5 && <span className={styles.droppedMore}>+{cargoFillPlan.droppedByBudget.length - 5} more</span>}
+                </div>
+              )}
+              {cargoFillPlan.droppedNoMargin.length > 0 && (
+                <div className={styles.droppedRow}>
+                  <span className={styles.droppedLabel}>unprofitable:</span>
+                  <span className={styles.droppedQty}>{cargoFillPlan.droppedNoMargin.length} item(s) priced under haul cost</span>
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
     </>

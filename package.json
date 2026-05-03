@@ -1,6 +1,6 @@
 {
   "name": "met0-praisal",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "EVE Online item appraiser & LP-store calculator — Cloudflare Workers + Supabase",
   "private": true,
   "type": "module",

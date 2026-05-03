@@ -31,8 +31,22 @@
 - Cross-faction filter: items wrongly returned by ESI for a militia (e.g. Federation Navy items in 24th Imperial Crusade) are dropped server-side
 - 7-day Jita volume sparkline per item (ESI market history, 24h TTL) — green = rising, red = falling
 - SELL VOL colour-tiered by quartile so depth-anomalies are visible at a glance
-- Filterable by item name; URL-state persistence (`?tab=lp&corp=1000110&cat=7&q=phased` works as a deep-link)
+- Filterable by item name; URL-state persistence (`?tab=lp&corp=1000179&cat=7&q=phased` works as a deep-link)
 - Offers and prices show cache freshness age
+
+**Corp LP tab**
+- Compute corp-internal LP-store pricing using your acquisition cost + a markup %
+- Highlights "great deals" vs Jita sell, plus a top-5 savings banner
+
+**Hauling tab**
+- Route picker: pick FROM (buy) and TO (sell) stations across the 5 supported hubs — quotes source + destination prices in one call via `/api/hauling/route`
+- Self-haul mode (ISK/m³) or Courier-contract mode (collateral % + flat reward) — toggle to match how you actually move freight
+- Per-item ship/cargo selector with 25+ haulers (T1 industrial → Jump Freighter), each carrying base cargo, EHP, align time, warp speed, and (for JFs) jump-fuel type — surfaced inline so you can see Bustard vs. Mastodon at a glance
+- Depth-aware planner: each stack is capped at 50% of destination sell-side depth so the planner doesn't recommend dumps that the market can't absorb (toggle off if you don't care)
+- Optional ISK budget cap on total source buy-in; the knapsack greedy fills cargo subject to BOTH m³ and ISK constraints
+- "Left behind" panel breaks dropped items into reasons: cargo full / budget exhausted / unprofitable
+- Save trip → POST /api/appraise gets a slug, the share URL with all settings is auto-copied to clipboard; alliance JF pilots can paste it back to load the exact same plan
+- Per-item ✓ (full) or ~N% (partial) cargo markers, cargo-used progress bar, TRIP PROFIT after tax + haul cost
 
 ## Project Structure
 
@@ -49,6 +63,8 @@ met0-praisal/
 │       ├── appraise.js           # POST /api/appraise
 │       ├── appraisal/
 │       │   └── [slug].js         # GET /api/appraisal/:slug
+│       ├── hauling/
+│       │   └── route.js          # POST /api/hauling/route (dual-station prices)
 │       ├── industry/
 │       │   └── indices.js        # GET /api/industry/indices
 │       └── lp/
@@ -68,9 +84,11 @@ met0-praisal/
 │   │   ├── ResultsTable.jsx
 │   │   ├── Sparkline.jsx
 │   │   ├── LpStore.jsx
-│   │   └── CorpStore.jsx
+│   │   ├── CorpStore.jsx
+│   │   └── Hauling.jsx
 │   ├── lib/
 │   │   ├── corps.js              # Shared LP-corp fetch hook
+│   │   ├── haulingShips.js       # Hauling ship hold sizes
 │   │   └── history.js            # Browser-local appraisal history
 │   ├── App.jsx
 │   ├── main.jsx
@@ -197,7 +215,7 @@ Mexallon
 
 ## Version
 
-`0.5.0`
+`0.5.1`
 
 ## License
 
