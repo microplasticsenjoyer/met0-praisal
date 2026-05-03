@@ -10,7 +10,7 @@ import { LP_CORPS } from "./_corps.js";
 const GROUPS = [
   {
     label: "Main FW Militias",
-    corpIds: [1000110, 1000179, 1000180, 1000182],
+    corpIds: [1000179, 1000181, 1000180, 1000182],
   },
   {
     label: "Pirate FW",

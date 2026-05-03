@@ -673,6 +673,14 @@ export default function LpStore() {
                           >
                             {copied === o.offerId ? "✓" : "⎘"}
                           </button>
+                          {o.built && (
+                            <span
+                              className={styles.builtBadge}
+                              title="Profit assumes you build the BPC and sell the finished product (ME0/TE0). Inputs include the BPC's LP-store cost plus manufacturing materials."
+                            >
+                              BUILT
+                            </span>
+                          )}
                           {groupByItem && (o.offerCount ?? 1) > 1 && (
                             <span className={styles.offerCount}>{o.offerCount} offers</span>
                           )}
