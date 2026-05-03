@@ -1,10 +1,17 @@
 import { getServiceClient } from "./_supabase.js";
 import { parseItemList } from "./_parser.js";
 import { generateSlug } from "./_slug.js";
+import { JITA_STATION, isSupportedStation } from "./_stations.js";
+import { checkRateLimit, maybeReapStaleRows } from "./_rate_limit.js";
+
+// 30 appraisals per IP per 5 minutes. Generous for legit corp use, cheap
+// to bypass for legitimate burst paste sessions, and tight enough that
+// scripted abuse fills nothing meaningful before getting throttled.
+const APPRAISE_RATE_LIMIT = 30;
+const APPRAISE_RATE_WINDOW_MS = 5 * 60 * 1000;
 
 const ESI_BASE = "https://esi.evetech.net/latest";
 const FUZZWORK_BASE = "https://market.fuzzwork.co.uk/aggregates/";
-const JITA_STATION = 60003760;
 
 // Price cache TTL: 30 minutes
 const PRICE_TTL_MS = 30 * 60 * 1000;
@@ -18,12 +25,37 @@ export async function onRequestPost({ request, env }) {
   };
 
   try {
-    const { text } = await request.json();
+    const db = getServiceClient(env);
+
+    // Rate-limit before reading the body — cheap path for hostile callers.
+    const rl = await checkRateLimit(db, request, {
+      limit: APPRAISE_RATE_LIMIT,
+      windowMs: APPRAISE_RATE_WINDOW_MS,
+    });
+    if (!rl.allowed) {
+      return new Response(
+        JSON.stringify({ error: "Rate limit exceeded; slow down a bit." }),
+        {
+          status: 429,
+          headers: { ...headers, "Retry-After": String(rl.retryAfter) },
+        }
+      );
+    }
+    // Best-effort cleanup of long-idle IP rows (1% sampling so it's free per request).
+    maybeReapStaleRows(db);
+
+    const body = await request.json();
+    const text = body?.text;
     if (!text?.trim()) {
       return new Response(JSON.stringify({ error: "text field required" }), { status: 400, headers });
     }
-
-    const db = getServiceClient(env);
+    // Hard cap on input size — even a fleet hangar dump fits comfortably under this.
+    if (text.length > 100_000) {
+      return new Response(JSON.stringify({ error: "Input too large (max 100k chars)" }), { status: 400, headers });
+    }
+    // Validate optional station; fall back to Jita 4-4 if missing or unsupported.
+    const requestedStation = parseInt(body?.stationId, 10);
+    const stationId = isSupportedStation(requestedStation) ? requestedStation : JITA_STATION;
     const parsed = parseItemList(text);
     if (parsed.length === 0) {
       return new Response(JSON.stringify({ error: "No recognizable items found" }), { status: 400, headers });
@@ -36,13 +68,14 @@ export async function onRequestPost({ request, env }) {
     // ── 2. Fetch prices + volumes (cache-first) ───────────────────────────
     const typeIDs = Object.values(nameMap).filter(Boolean);
     const [priceMap, volumeMap] = await Promise.all([
-      getPrices(db, typeIDs),
+      getPrices(db, typeIDs, stationId),
       getVolumes(db, typeIDs),
     ]);
 
     // ── 3. Build line items ───────────────────────────────────────────────
     let totalBuy = 0;
     let totalSell = 0;
+    let pricesUpdatedAt = null;
 
     const items = parsed.map(({ name, quantity }) => {
       const typeID = nameMap[name.toLowerCase()] ?? null;
@@ -53,11 +86,22 @@ export async function onRequestPost({ request, env }) {
       const sellTotal = sellEach * quantity;
       const buyTotal = buyEach * quantity;
       const volumeEach = (typeID != null ? volumeMap[typeID] : null) ?? null;
+      const sellVolume = prices?.sell_volume ?? null;
+
+      if (prices?.updated_at) {
+        if (!pricesUpdatedAt || prices.updated_at < pricesUpdatedAt) {
+          pricesUpdatedAt = prices.updated_at;
+        }
+      }
 
       totalBuy += buyTotal;
       totalSell += sellTotal;
 
-      return { typeID, name, quantity, sellEach, buyEach, sellTotal, buyTotal, volumeEach, unknown: !typeID || !prices };
+      return {
+        typeID, name, quantity, sellEach, buyEach, sellTotal, buyTotal,
+        volumeEach, sellVolume,
+        unknown: !typeID || !prices,
+      };
     });
 
     // ── 4. Persist appraisal ──────────────────────────────────────────────
@@ -65,7 +109,12 @@ export async function onRequestPost({ request, env }) {
 
     const { data: appraisal, error: appraisalErr } = await db
       .from("appraisals")
-      .insert({ slug, raw_input: text, total_buy: totalBuy, total_sell: totalSell, item_count: items.length })
+      .insert({
+        slug, raw_input: text,
+        total_buy: totalBuy, total_sell: totalSell,
+        item_count: items.length,
+        station_id: stationId,
+      })
       .select("id, slug, created_at")
       .single();
 
@@ -86,7 +135,12 @@ export async function onRequestPost({ request, env }) {
     );
 
     return new Response(
-      JSON.stringify({ slug: appraisal.slug, createdAt: appraisal.created_at, items, totalBuy, totalSell }),
+      JSON.stringify({
+        slug: appraisal.slug,
+        createdAt: appraisal.created_at,
+        stationId,
+        items, totalBuy, totalSell, pricesUpdatedAt,
+      }),
       { headers }
     );
   } catch (err) {
@@ -161,7 +215,7 @@ async function esiResolveNames(names) {
   for (const c of chunks) {
     const res = await fetch(`${ESI_BASE}/universe/ids/?datasource=tranquility`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "met0-praisal/0.1.0" },
+      headers: { "Content-Type": "application/json", "User-Agent": "met0-praisal/0.5.0" },
       body: JSON.stringify(c),
     });
     if (!res.ok) continue;
@@ -171,61 +225,80 @@ async function esiResolveNames(names) {
   return out;
 }
 
-async function getPrices(db, typeIDs) {
+async function getPrices(db, typeIDs, stationId) {
   if (typeIDs.length === 0) return {};
 
-  // Check cache
-  const { data: cached } = await db
-    .from("price_cache")
-    .select("type_id, sell_min, sell_max, buy_min, buy_max, updated_at")
-    .in("type_id", typeIDs);
+  // The price_cache table is keyed only by type_id and is reserved for the
+  // default trading hub (Jita 4-4). For any other station we bypass the cache
+  // and call Fuzzwork directly — those requests are uncommon, and we'd
+  // otherwise need a composite (type_id, station_id) key + invalidation.
+  const useCache = stationId === JITA_STATION;
 
   const priceMap = {};
-  const stale = [];
-  const now = Date.now();
 
-  for (const row of cached ?? []) {
-    if (now - new Date(row.updated_at).getTime() < PRICE_TTL_MS) {
-      priceMap[row.type_id] = row;
-    } else {
-      stale.push(row.type_id);
+  if (useCache) {
+    const { data: cached } = await db
+      .from("price_cache")
+      .select("type_id, sell_min, sell_max, buy_min, buy_max, sell_volume, updated_at")
+      .in("type_id", typeIDs);
+    const now = Date.now();
+    const stale = [];
+    for (const row of cached ?? []) {
+      if (now - new Date(row.updated_at).getTime() < PRICE_TTL_MS) {
+        priceMap[row.type_id] = row;
+      } else {
+        stale.push(row.type_id);
+      }
     }
+    const missing = typeIDs.filter((id) => !(id in priceMap));
+    const toFetch = [...new Set([...missing, ...stale])];
+    if (toFetch.length > 0) {
+      const fresh = await fuzzworkPrices(toFetch, stationId);
+      const upsertRows = [];
+      for (const [idStr, data] of Object.entries(fresh)) {
+        const typeID = parseInt(idStr, 10);
+        const row = {
+          type_id: typeID,
+          sell_min: parseFloat(data.sell.min),
+          sell_max: parseFloat(data.sell.max),
+          buy_min: parseFloat(data.buy.min),
+          buy_max: parseFloat(data.buy.max),
+          sell_volume: parseInt(data.sell.volume, 10) || null,
+          updated_at: new Date().toISOString(),
+        };
+        priceMap[typeID] = row;
+        upsertRows.push(row);
+      }
+      if (upsertRows.length > 0) {
+        await db.from("price_cache").upsert(upsertRows, { onConflict: "type_id" });
+      }
+    }
+    return priceMap;
   }
 
-  const missing = typeIDs.filter((id) => !(id in priceMap));
-  const toFetch = [...new Set([...missing, ...stale])];
-
-  if (toFetch.length > 0) {
-    const fresh = await fuzzworkPrices(toFetch);
-    const upsertRows = [];
-
-    for (const [idStr, data] of Object.entries(fresh)) {
-      const typeID = parseInt(idStr, 10);
-      const row = {
-        type_id: typeID,
-        sell_min: parseFloat(data.sell.min),
-        sell_max: parseFloat(data.sell.max),
-        buy_min: parseFloat(data.buy.min),
-        buy_max: parseFloat(data.buy.max),
-        updated_at: new Date().toISOString(),
-      };
-      priceMap[typeID] = row;
-      upsertRows.push(row);
-    }
-
-    if (upsertRows.length > 0) {
-      await db.from("price_cache").upsert(upsertRows, { onConflict: "type_id" });
-    }
+  // Non-Jita: live fetch only, no caching.
+  const fresh = await fuzzworkPrices(typeIDs, stationId);
+  const liveTimestamp = new Date().toISOString();
+  for (const [idStr, data] of Object.entries(fresh)) {
+    const typeID = parseInt(idStr, 10);
+    priceMap[typeID] = {
+      type_id: typeID,
+      sell_min: parseFloat(data.sell.min),
+      sell_max: parseFloat(data.sell.max),
+      buy_min: parseFloat(data.buy.min),
+      buy_max: parseFloat(data.buy.max),
+      sell_volume: parseInt(data.sell.volume, 10) || null,
+      updated_at: liveTimestamp,
+    };
   }
-
   return priceMap;
 }
 
-async function fuzzworkPrices(typeIDs) {
+async function fuzzworkPrices(typeIDs, stationId) {
   const chunks = chunk(typeIDs, 200);
   const out = {};
   for (const c of chunks) {
-    const params = new URLSearchParams({ station: JITA_STATION, types: c.join(",") });
+    const params = new URLSearchParams({ station: stationId, types: c.join(",") });
     const res = await fetch(`${FUZZWORK_BASE}?${params}`);
     if (!res.ok) continue;
     Object.assign(out, await res.json());
@@ -260,7 +333,7 @@ async function getVolumes(db, typeIDs) {
       missing.map(async (id) => {
         try {
           const res = await fetch(`${ESI_BASE}/universe/types/${id}/?datasource=tranquility`, {
-            headers: { "User-Agent": "met0-praisal/0.4.0" },
+            headers: { "User-Agent": "met0-praisal/0.5.0" },
           });
           if (!res.ok) return null;
           const data = await res.json();

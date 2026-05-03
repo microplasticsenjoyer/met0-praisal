@@ -1,26 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import styles from "./LpStore.module.css";
-
-const CORP_GROUPS = [
-  {
-    label: "Main FW Militias",
-    corps: [
-      { id: 1000110, name: "24th Imperial Crusade", faction: "Amarr Empire" },
-      { id: 1000179, name: "Federal Defence Union", faction: "Gallente Federation" },
-      { id: 1000180, name: "State Protectorate", faction: "Caldari State" },
-      { id: 1000182, name: "Tribal Liberation Force", faction: "Minmatar Republic" },
-    ],
-  },
-  {
-    label: "Pirate FW",
-    corps: [
-      { id: 1000436, name: "Malakim Zealots", faction: "Angel Cartel" },
-      { id: 1000437, name: "Commando Guri", faction: "Guristas Pirates" },
-    ],
-  },
-];
-
-const ALL_CORPS = CORP_GROUPS.flatMap((g) => g.corps);
+import { useCorpGroups } from "../lib/corps.js";
 
 // EVE category_id → friendly label for filter chips.
 const CATEGORY_LABELS = {
@@ -96,8 +76,38 @@ function lowerBound(arr, target) {
   return lo;
 }
 
+// URL params live alongside ?tab=lp so deep-links keep working.
+function readUrlParam(key) {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get(key);
+}
+function writeUrlParams(updates) {
+  if (typeof window === "undefined") return;
+  const params = new URLSearchParams(window.location.search);
+  for (const [k, v] of Object.entries(updates)) {
+    if (v == null || v === "") params.delete(k);
+    else params.set(k, String(v));
+  }
+  const qs = params.toString();
+  const url = qs ? `?${qs}` : window.location.pathname;
+  window.history.replaceState({}, "", url);
+}
+
 export default function LpStore() {
-  const [corpId, setCorpId] = useState(ALL_CORPS[0].id);
+  const { groups: CORP_GROUPS, allCorps: ALL_CORPS, loading: corpsLoading } = useCorpGroups();
+
+  // Hydrate corp from URL (?corp=) if present and supported.
+  const [corpId, setCorpId] = useState(() => {
+    const fromUrl = parseInt(readUrlParam("corp") ?? "", 10);
+    return Number.isFinite(fromUrl) ? fromUrl : null;
+  });
+
+  // Once corp list arrives, default to the first one if URL didn't pick.
+  useEffect(() => {
+    if (corpId != null) return;
+    if (ALL_CORPS.length === 0) return;
+    setCorpId(ALL_CORPS[0].id);
+  }, [ALL_CORPS, corpId]);
   const [data, setData] = useState(null);
   const [history, setHistory] = useState({});
   const [loading, setLoading] = useState(false);
@@ -111,8 +121,20 @@ export default function LpStore() {
     () => localStorage.getItem(STORAGE_PREFIX + "sortDir") ?? "desc"
   );
 
-  const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState(null);
+  const [search, setSearch] = useState(() => readUrlParam("q") ?? "");
+  const [categoryFilter, setCategoryFilter] = useState(() => {
+    const c = parseInt(readUrlParam("cat") ?? "", 10);
+    return Number.isFinite(c) ? c : null;
+  });
+
+  // Persist filter/search/corp to URL for deep-linking.
+  useEffect(() => {
+    writeUrlParams({
+      corp: corpId,
+      cat: categoryFilter,
+      q: search.trim() || null,
+    });
+  }, [corpId, categoryFilter, search]);
 
   // Advanced toggle — persisted to localStorage; falls back to viewport width.
   const [advanced, setAdvanced] = useState(() => {
@@ -137,6 +159,28 @@ export default function LpStore() {
   const [mfgTax, setMfgTax] = useState(() => parseStored("mfgTax"));
 
   const historyAbortRef = useRef(null);
+
+  // Industry-system picker. ESI's manufacturing cost index for the selected
+  // system maps to "extra cost as a fraction of input materials" — we feed
+  // it into the existing MFG TAX field as a one-click prefill.
+  const [industrySystems, setIndustrySystems] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/industry/indices")
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => { if (!cancelled && j?.systems) setIndustrySystems(j.systems); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  function applyIndustrySystem(systemIdStr) {
+    const id = parseInt(systemIdStr, 10);
+    if (!Number.isFinite(id)) return;
+    const sys = industrySystems.find((s) => s.systemId === id);
+    if (!sys) return;
+    const pct = (sys.manufacturingIndex * 100).toFixed(2);
+    setDraftMfgTax(pct);
+  }
 
   function handleCalculate() {
     const lp = Math.max(0, parseFloat(draftLpPrice) || 0);
@@ -166,13 +210,13 @@ export default function LpStore() {
   }
 
   useEffect(() => {
+    if (corpId == null) return;
     let cancelled = false;
     async function load() {
       setLoading(true);
       setError(null);
       setData(null);
       setHistory({});
-      setCategoryFilter(null);
       try {
         const res = await fetch(`/api/lp/${corpId}`);
         const json = await res.json();
@@ -361,6 +405,19 @@ export default function LpStore() {
     setTimeout(() => setCopied((prev) => (prev === offerId ? null : prev)), 1500);
   }
 
+  // Copy this offer's input materials as a multibuy-friendly paste
+  // (one "<qty> <name>" per line), so members can paste it into Jita
+  // multibuy directly. Uses a distinct copied-token so the per-row
+  // checkmark animation doesn't collide with copyItem's name-copy.
+  function copyMultibuy(offerId, inputs) {
+    if (!inputs?.length) return;
+    const text = inputs.map((i) => `${i.quantity} ${i.name}`).join("\n");
+    navigator.clipboard.writeText(text).catch(() => {});
+    const tag = `mb-${offerId}`;
+    setCopied(tag);
+    setTimeout(() => setCopied((prev) => (prev === tag ? null : prev)), 1500);
+  }
+
   function exportTsv() {
     const headers = ["Item", "Category", "QTY", "LP Cost", "ISK Cost", "Input Cost",
       "On Market", "Sell Val", "Profit (Sell)", "ISK/LP (Sell)", "ISK/LP (Buy)"];
@@ -400,9 +457,11 @@ export default function LpStore() {
             <label className={styles.label}>CORPORATION</label>
             <select
               className={styles.select}
-              value={corpId}
+              value={corpId ?? ""}
               onChange={(e) => setCorpId(parseInt(e.target.value, 10))}
+              disabled={corpsLoading || CORP_GROUPS.length === 0}
             >
+              {corpsLoading && <option value="">Loading…</option>}
               {CORP_GROUPS.map((g) => (
                 <optgroup key={g.label} label={g.label}>
                   {g.corps.map((c) => (
@@ -440,6 +499,24 @@ export default function LpStore() {
             <label className={styles.label}>MFG TAX %</label>
             {draftInput(draftMfgTax, setDraftMfgTax)}
           </div>
+          {industrySystems.length > 0 && (
+            <div className={styles.field}>
+              <label className={styles.label}>MFG SYSTEM</label>
+              <select
+                className={styles.indexSelect}
+                defaultValue=""
+                onChange={(e) => { applyIndustrySystem(e.target.value); e.target.value = ""; }}
+                title="Pick a system to prefill MFG TAX % from its current manufacturing index"
+              >
+                <option value="">prefill from system…</option>
+                {industrySystems.map((s) => (
+                  <option key={s.systemId} value={s.systemId}>
+                    {s.systemName} — {(s.manufacturingIndex * 100).toFixed(2)}%
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className={styles.field}>
             <label className={styles.label}>&nbsp;</label>
             <button className={styles.calcBtn} onClick={handleCalculate}>CALCULATE</button>
@@ -602,6 +679,13 @@ export default function LpStore() {
                         </div>
                         {o.inputs.length > 0 && (
                           <div className={styles.inputs}>
+                            <button
+                              className={`${styles.multibuyBtn} ${copied === `mb-${o.offerId}` ? styles.multibuyBtnDone : ""}`}
+                              onClick={() => copyMultibuy(o.offerId, o.inputs)}
+                              title="Copy materials as multibuy paste"
+                            >
+                              {copied === `mb-${o.offerId}` ? "COPIED ✓" : "MULTIBUY"}
+                            </button>
                             {o.inputs.map((i) => (
                               <span key={i.typeID} className={styles.input}>
                                 {i.quantity}× {i.name}

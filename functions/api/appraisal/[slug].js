@@ -16,7 +16,7 @@ export async function onRequestGet({ params, env }) {
 
   const { data: appraisal, error } = await db
     .from("appraisals")
-    .select("id, slug, total_buy, total_sell, item_count, created_at, raw_input")
+    .select("id, slug, total_buy, total_sell, item_count, created_at, raw_input, station_id")
     .eq("slug", slug)
     .single();
 
@@ -30,16 +30,25 @@ export async function onRequestGet({ params, env }) {
     .eq("appraisal_id", appraisal.id)
     .order("sell_total", { ascending: false });
 
-  // Fetch volumes from item_cache for known type IDs.
+  // Fetch m³ volumes from item_cache and current Jita listed sell_volume from
+  // price_cache for known type IDs. pricesUpdatedAt is the oldest price-cache
+  // timestamp across the items (most conservative freshness).
   const typeIDs = (items ?? []).map((i) => i.type_id).filter(Boolean);
   let volumeMap = {};
+  let sellVolumeMap = {};
+  let pricesUpdatedAt = null;
   if (typeIDs.length > 0) {
-    const { data: vols } = await db
-      .from("item_cache")
-      .select("type_id, volume")
-      .in("type_id", typeIDs)
-      .not("volume", "is", null);
+    const [{ data: vols }, { data: prices }] = await Promise.all([
+      db.from("item_cache").select("type_id, volume").in("type_id", typeIDs).not("volume", "is", null),
+      db.from("price_cache").select("type_id, sell_volume, updated_at").in("type_id", typeIDs),
+    ]);
     for (const row of vols ?? []) volumeMap[row.type_id] = Number(row.volume);
+    for (const row of prices ?? []) {
+      if (row.sell_volume != null) sellVolumeMap[row.type_id] = Number(row.sell_volume);
+      if (row.updated_at && (!pricesUpdatedAt || row.updated_at < pricesUpdatedAt)) {
+        pricesUpdatedAt = row.updated_at;
+      }
+    }
   }
 
   return new Response(
@@ -49,6 +58,8 @@ export async function onRequestGet({ params, env }) {
       totalSell: appraisal.total_sell,
       itemCount: appraisal.item_count,
       createdAt: appraisal.created_at,
+      stationId: appraisal.station_id,
+      pricesUpdatedAt,
       rawInput: appraisal.raw_input,
       items: (items ?? []).map((i) => ({
         typeID: i.type_id,
@@ -59,6 +70,7 @@ export async function onRequestGet({ params, env }) {
         sellTotal: parseFloat(i.sell_total),
         buyTotal: parseFloat(i.buy_total),
         volumeEach: volumeMap[i.type_id] ?? null,
+        sellVolume: sellVolumeMap[i.type_id] ?? null,
         unknown: i.unknown,
       })),
     }),

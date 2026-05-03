@@ -7,7 +7,12 @@ import ShareBar from "./components/ShareBar.jsx";
 import Tabs from "./components/Tabs.jsx";
 import LpStore from "./components/LpStore.jsx";
 import CorpStore from "./components/CorpStore.jsx";
+import StationPicker, { readStoredStationId } from "./components/StationPicker.jsx";
+import AppraisalHistory from "./components/AppraisalHistory.jsx";
+import { addHistoryEntry } from "./lib/history.js";
 import styles from "./App.module.css";
+
+const DEFAULT_STATION = 60003760;
 
 const TAB_OPTIONS = [
   { value: "appraise", label: "Appraise" },
@@ -20,6 +25,9 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [loadingShared, setLoadingShared] = useState(false);
+  const [stationId, setStationId] = useState(() => readStoredStationId(DEFAULT_STATION));
+  // Bumped to re-render AppraisalHistory after we record a new entry.
+  const [historyVersion, setHistoryVersion] = useState(0);
   const [tab, setTab] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("a")) return "appraise";
@@ -48,11 +56,28 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Not found");
       setResults({ ...data, slug });
+      // Record locally so corp mates can find this appraisal in their history
+      // even if they only ever opened a shared link.
+      addHistoryEntry({
+        slug,
+        totalBuy: data.totalBuy,
+        totalSell: data.totalSell,
+        itemCount: data.items?.length ?? data.itemCount ?? 0,
+        stationId: data.stationId ?? null,
+        createdAt: data.createdAt,
+      });
+      setHistoryVersion((v) => v + 1);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoadingShared(false);
     }
+  }
+
+  // Programmatic open used by the history panel: sets the URL slug + loads.
+  function openSlug(slug) {
+    window.history.replaceState({}, "", `?a=${slug}`);
+    loadShared(slug);
   }
 
   async function handleAppraise(text) {
@@ -66,13 +91,22 @@ export default function App() {
       const res = await fetch("/api/appraise", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, stationId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Request failed");
       // Update URL to shareable link
       window.history.replaceState({}, "", `?a=${data.slug}`);
       setResults(data);
+      addHistoryEntry({
+        slug: data.slug,
+        totalBuy: data.totalBuy,
+        totalSell: data.totalSell,
+        itemCount: data.items?.length ?? 0,
+        stationId: data.stationId ?? null,
+        createdAt: data.createdAt,
+      });
+      setHistoryVersion((v) => v + 1);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -96,6 +130,14 @@ export default function App() {
             <div className={styles.loading}>LOADING APPRAISAL...</div>
           ) : (
             <>
+              {!results?.slug && (
+                <>
+                  <div className={styles.stationRow}>
+                    <StationPicker value={stationId} onChange={setStationId} />
+                  </div>
+                  <AppraisalHistory onOpen={openSlug} refreshKey={historyVersion} />
+                </>
+              )}
               <PasteInput
                 onAppraise={handleAppraise}
                 onClear={handleClear}
@@ -110,6 +152,8 @@ export default function App() {
                     totalBuy={Number(results.totalBuy)}
                     totalSell={Number(results.totalSell)}
                     count={results.items.length}
+                    pricesUpdatedAt={results.pricesUpdatedAt ?? null}
+                    stationId={results.stationId ?? null}
                     totalVolume={(() => {
                       let vol = null;
                       for (const item of results.items) {
@@ -128,7 +172,7 @@ export default function App() {
         {tab === "corp" && <CorpStore />}
       </main>
       <footer className={styles.footer}>
-        <span>met0-praisal v0.4.0</span>
+        <span>met0-praisal v0.5.0</span>
         <span>·</span>
         <span>Prices: <a href="https://market.fuzzwork.co.uk/" target="_blank" rel="noopener noreferrer">Fuzzwork</a> · <a href="https://esi.evetech.net/" target="_blank" rel="noopener noreferrer">EVE ESI</a></span>
         <span>·</span>

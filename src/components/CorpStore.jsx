@@ -1,25 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 import styles from "./CorpStore.module.css";
-
-const CORP_GROUPS = [
-  {
-    label: "Main FW Militias",
-    corps: [
-      { id: 1000110, name: "24th Imperial Crusade", faction: "Amarr Empire" },
-      { id: 1000179, name: "Federal Defence Union", faction: "Gallente Federation" },
-      { id: 1000180, name: "State Protectorate", faction: "Caldari State" },
-      { id: 1000182, name: "Tribal Liberation Force", faction: "Minmatar Republic" },
-    ],
-  },
-  {
-    label: "Pirate FW",
-    corps: [
-      { id: 1000436, name: "Malakim Zealots", faction: "Angel Cartel" },
-      { id: 1000437, name: "Commando Guri", faction: "Guristas Pirates" },
-    ],
-  },
-];
-const ALL_CORPS = CORP_GROUPS.flatMap((g) => g.corps);
+import { useCorpGroups } from "../lib/corps.js";
 
 const STORAGE_PREFIX = "met0:corpStore:";
 function readStored(key, fallback = "0") {
@@ -59,7 +40,12 @@ function timeAgo(isoString) {
 }
 
 export default function CorpStore() {
-  const [corpId, setCorpId] = useState(ALL_CORPS[0].id);
+  const { groups: CORP_GROUPS, allCorps: ALL_CORPS, loading: corpsLoading } = useCorpGroups();
+  const [corpId, setCorpId] = useState(null);
+
+  useEffect(() => {
+    if (corpId == null && ALL_CORPS.length > 0) setCorpId(ALL_CORPS[0].id);
+  }, [ALL_CORPS, corpId]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -103,6 +89,7 @@ export default function CorpStore() {
   }
 
   useEffect(() => {
+    if (corpId == null) return;
     let cancelled = false;
     async function load() {
       setLoading(true);
@@ -230,9 +217,11 @@ export default function CorpStore() {
             <label className={styles.label}>CORPORATION</label>
             <select
               className={styles.select}
-              value={corpId}
+              value={corpId ?? ""}
               onChange={(e) => setCorpId(parseInt(e.target.value, 10))}
+              disabled={corpsLoading || CORP_GROUPS.length === 0}
             >
+              {corpsLoading && <option value="">Loading…</option>}
               {CORP_GROUPS.map((g) => (
                 <optgroup key={g.label} label={g.label}>
                   {g.corps.map((c) => (

@@ -1,6 +1,6 @@
 # met0-praisal
 
-> EVE Online Jita 4-4 item appraiser — paste a cargo scan or item list, get live buy/sell prices instantly. Every appraisal gets a shareable link.
+> EVE Online item appraiser & LP-store calculator — paste a cargo scan, get live buy/sell prices, share the link, split the loot. Built for corp manufacturers and FW pilots.
 
 **Stack: React + Vite → Cloudflare Workers (Static Assets + Pages Functions compiled to `_worker.js`) · Supabase (Postgres)**
 
@@ -10,22 +10,28 @@
 
 **Appraise tab**
 - Paste raw EVE item lists — cargo scan, contract, D-scan, or manual
-- Live Jita 4-4 buy (max) and sell (min) prices via [Fuzzwork](https://market.fuzzwork.co.uk/)
-- Item name resolution via [EVE ESI](https://esi.evetech.net/)
-- Cached item typeIDs (7-day TTL) and prices (15-min TTL) in Supabase — fast repeat lookups
-- Every appraisal saved with a unique 6-char slug: `/?a=x7k2p`
-- One-click shareable link with copy button
-- Sortable results table with per-item and total ISK breakdown
+- Pick the trading hub: Jita 4-4 (default), Amarr VIII, Dodixie IX-19, Hek VIII-12, or Rens VI-8 — quotes against your actual market
+- Live buy (max) and sell (min) prices via [Fuzzwork](https://market.fuzzwork.co.uk/) and item name resolution via [EVE ESI](https://esi.evetech.net/)
+- Cached typeIDs (7-day TTL) and Jita prices (30-min TTL) in Supabase
+- Every appraisal saved with a 6-char slug: `?a=x7k2p` — one-click shareable link
+- Sales tax % + broker fee % inputs; Summary shows post-fee NET totals
+- Loot split: enter N ways and every member's share is computed against the post-fee net
+- ON MARKET column shows current Jita sell-side depth per item; rows where qty > listed depth get a "low depth" warning ("the headline number is fiction past that point")
+- Volume column for cargo m³ totals
+- Local appraisal history (browser-only, up to 25 entries) with click-to-open and inline titles like "loot from Tama 2025-W18"
 - Unknown items flagged but don't break the appraisal
+- Per-IP rate limit on the public POST endpoint, 100k-char input cap
 
 **LP Store tab**
 - LP store profitability calculator for FW militia and pirate FW corporations (24th Imperial Crusade, Federal Defence Union, State Protectorate, Tribal Liberation Force, Malakim Zealots, Commando Guri)
-- Live offer data via [Fuzzwork LP](https://www.fuzzwork.co.uk/lp/) cached in Supabase (24h TTL)
-- Configurable LP price, sales tax %, and manufacturing tax % — apply via Calculate button
-- Per-offer ISK/LP for both sell-order and buy-order exit strategies (visible in both simplified and advanced views)
+- Configurable LP price, sales tax %, and MFG tax % — apply via Calculate button
+- MFG SYSTEM picker pre-fills MFG TAX from ESI's live manufacturing cost-index per system (Jita / Perimeter / Amarr / Hek / Rens / etc.)
+- Per-offer ISK/LP for both sell-order and buy-order exit strategies
+- MULTIBUY button per row copies input materials as a Jita multibuy paste
+- Cross-faction filter: items wrongly returned by ESI for a militia (e.g. Federation Navy items in 24th Imperial Crusade) are dropped server-side
 - 7-day Jita volume sparkline per item (ESI market history, 24h TTL) — green = rising, red = falling
-- SELL VOL color-tiered against peer offers (quartile bucketing) so spikes vs. baseline are visible at a glance
-- Filterable by item name; all columns sortable
+- SELL VOL colour-tiered by quartile so depth-anomalies are visible at a glance
+- Filterable by item name; URL-state persistence (`?tab=lp&corp=1000110&cat=7&q=phased` works as a deep-link)
 - Offers and prices show cache freshness age
 
 ## Project Structure
@@ -37,11 +43,17 @@ met0-praisal/
 │       ├── _supabase.js          # Supabase client factory
 │       ├── _parser.js            # Item list parser
 │       ├── _slug.js              # Slug generator
+│       ├── _stations.js          # Supported trading hubs
+│       ├── _rate_limit.js        # Per-IP rate limiter helper
+│       ├── stations.js           # GET /api/stations
 │       ├── appraise.js           # POST /api/appraise
 │       ├── appraisal/
 │       │   └── [slug].js         # GET /api/appraisal/:slug
+│       ├── industry/
+│       │   └── indices.js        # GET /api/industry/indices
 │       └── lp/
-│           ├── _corps.js         # Supported LP store corporations
+│           ├── _corps.js         # Supported LP store corps + cross-faction filter
+│           ├── corps.js          # GET /api/lp/corps
 │           ├── [corpId].js       # GET /api/lp/:corpId
 │           └── history.js        # POST /api/lp/history (7-day volume cache)
 ├── src/
@@ -49,17 +61,22 @@ met0-praisal/
 │   │   ├── Header.jsx
 │   │   ├── Tabs.jsx
 │   │   ├── PasteInput.jsx
+│   │   ├── StationPicker.jsx
+│   │   ├── AppraisalHistory.jsx
 │   │   ├── ShareBar.jsx
 │   │   ├── Summary.jsx
 │   │   ├── ResultsTable.jsx
 │   │   ├── Sparkline.jsx
-│   │   └── LpStore.jsx
+│   │   ├── LpStore.jsx
+│   │   └── CorpStore.jsx
+│   ├── lib/
+│   │   ├── corps.js              # Shared LP-corp fetch hook
+│   │   └── history.js            # Browser-local appraisal history
 │   ├── App.jsx
 │   ├── main.jsx
 │   └── index.css
 ├── supabase/
-│   └── migrations/
-│       └── 20260429_initial_schema.sql
+│   └── migrations/               # See ls supabase/migrations/ for the full set
 ├── index.html
 ├── vite.config.js
 ├── wrangler.jsonc
@@ -149,6 +166,8 @@ npm run deploy
 | `appraisal_items` | Line items per appraisal |
 | `lp_offers` | LP store offers per corporation, 24h TTL |
 | `market_history` | 7-day Jita volume + average per typeID, 24h TTL |
+| `industry_indices` | ESI manufacturing cost-index per popular system, 1h TTL |
+| `rate_limits` | Per-IP token bucket for /api/appraise (server-side only) |
 
 RLS is enabled — anon key has read-only access, all writes use the service role key (server-side only).
 
@@ -178,7 +197,7 @@ Mexallon
 
 ## Version
 
-`0.4.0`
+`0.5.0`
 
 ## License
 

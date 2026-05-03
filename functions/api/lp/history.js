@@ -103,7 +103,7 @@ async function fetchEsiHistoryBatch(typeIDs) {
       try {
         const res = await fetch(
           `${ESI_BASE}/markets/${THE_FORGE}/history/?datasource=tranquility&type_id=${id}`,
-          { headers: { "User-Agent": "met0-praisal/0.4.0" } }
+          { headers: { "User-Agent": "met0-praisal/0.5.0" } }
         );
         if (!res.ok) { out[id] = []; continue; }
         const all = await res.json();
