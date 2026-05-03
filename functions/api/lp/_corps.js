@@ -18,13 +18,13 @@
 
 export const LP_CORPS = {
   // Main Faction Warfare militias
-  1000110: {
+  1000179: {
     name: "24th Imperial Crusade",
     faction: "Amarr Empire",
     race: "Amarr",
     ownNavyPrefixes: ["Imperial Navy", "Khanid Navy", "Amarr Empire", "Amarr Navy"],
   },
-  1000179: {
+  1000181: {
     name: "Federal Defence Union",
     faction: "Gallente Federation",
     race: "Gallente",
