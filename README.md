@@ -39,9 +39,14 @@
 - Highlights "great deals" vs Jita sell, plus a top-5 savings banner
 
 **Hauling tab**
-- Paste a cargo list, pick a hauling ship, set ISK/m³ haul cost + sales tax %
-- Greedy cargo-fill plan ranks items by net ISK/m³ and packs your hold to capacity
-- Per-item ✓ (full) or ~N% (partial) markers, cargo-used progress bar, TRIP PROFIT total
+- Route picker: pick FROM (buy) and TO (sell) stations across the 5 supported hubs — quotes source + destination prices in one call via `/api/hauling/route`
+- Self-haul mode (ISK/m³) or Courier-contract mode (collateral % + flat reward) — toggle to match how you actually move freight
+- Per-item ship/cargo selector with 25+ haulers (T1 industrial → Jump Freighter), each carrying base cargo, EHP, align time, warp speed, and (for JFs) jump-fuel type — surfaced inline so you can see Bustard vs. Mastodon at a glance
+- Depth-aware planner: each stack is capped at 50% of destination sell-side depth so the planner doesn't recommend dumps that the market can't absorb (toggle off if you don't care)
+- Optional ISK budget cap on total source buy-in; the knapsack greedy fills cargo subject to BOTH m³ and ISK constraints
+- "Left behind" panel breaks dropped items into reasons: cargo full / budget exhausted / unprofitable
+- Save trip → POST /api/appraise gets a slug, the share URL with all settings is auto-copied to clipboard; alliance JF pilots can paste it back to load the exact same plan
+- Per-item ✓ (full) or ~N% (partial) cargo markers, cargo-used progress bar, TRIP PROFIT after tax + haul cost
 
 ## Project Structure
 
@@ -58,6 +63,8 @@ met0-praisal/
 │       ├── appraise.js           # POST /api/appraise
 │       ├── appraisal/
 │       │   └── [slug].js         # GET /api/appraisal/:slug
+│       ├── hauling/
+│       │   └── route.js          # POST /api/hauling/route (dual-station prices)
 │       ├── industry/
 │       │   └── indices.js        # GET /api/industry/indices
 │       └── lp/
