@@ -62,7 +62,7 @@ export async function onRequestGet({ env }) {
     // Refresh from ESI: one call returns the entire table, we just project
     // the systems we care about.
     const all = await fetch(`${ESI_BASE}/industry/systems/?datasource=tranquility`, {
-      headers: { "User-Agent": "met0-praisal/0.5.0" },
+      headers: { "User-Agent": "met0-praisal/0.5.1" },
     });
     if (!all.ok) {
       // ESI hiccup: serve whatever cache we have rather than failing.

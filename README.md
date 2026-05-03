@@ -31,8 +31,17 @@
 - Cross-faction filter: items wrongly returned by ESI for a militia (e.g. Federation Navy items in 24th Imperial Crusade) are dropped server-side
 - 7-day Jita volume sparkline per item (ESI market history, 24h TTL) — green = rising, red = falling
 - SELL VOL colour-tiered by quartile so depth-anomalies are visible at a glance
-- Filterable by item name; URL-state persistence (`?tab=lp&corp=1000110&cat=7&q=phased` works as a deep-link)
+- Filterable by item name; URL-state persistence (`?tab=lp&corp=1000179&cat=7&q=phased` works as a deep-link)
 - Offers and prices show cache freshness age
+
+**Corp LP tab**
+- Compute corp-internal LP-store pricing using your acquisition cost + a markup %
+- Highlights "great deals" vs Jita sell, plus a top-5 savings banner
+
+**Hauling tab**
+- Paste a cargo list, pick a hauling ship, set ISK/m³ haul cost + sales tax %
+- Greedy cargo-fill plan ranks items by net ISK/m³ and packs your hold to capacity
+- Per-item ✓ (full) or ~N% (partial) markers, cargo-used progress bar, TRIP PROFIT total
 
 ## Project Structure
 
@@ -68,9 +77,11 @@ met0-praisal/
 │   │   ├── ResultsTable.jsx
 │   │   ├── Sparkline.jsx
 │   │   ├── LpStore.jsx
-│   │   └── CorpStore.jsx
+│   │   ├── CorpStore.jsx
+│   │   └── Hauling.jsx
 │   ├── lib/
 │   │   ├── corps.js              # Shared LP-corp fetch hook
+│   │   ├── haulingShips.js       # Hauling ship hold sizes
 │   │   └── history.js            # Browser-local appraisal history
 │   ├── App.jsx
 │   ├── main.jsx
@@ -197,7 +208,7 @@ Mexallon
 
 ## Version
 
-`0.5.0`
+`0.5.1`
 
 ## License
 
