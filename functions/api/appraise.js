@@ -215,7 +215,7 @@ async function esiResolveNames(names) {
   for (const c of chunks) {
     const res = await fetch(`${ESI_BASE}/universe/ids/?datasource=tranquility`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "met0-praisal/0.1.0" },
+      headers: { "Content-Type": "application/json", "User-Agent": "met0-praisal/0.5.0" },
       body: JSON.stringify(c),
     });
     if (!res.ok) continue;
@@ -333,7 +333,7 @@ async function getVolumes(db, typeIDs) {
       missing.map(async (id) => {
         try {
           const res = await fetch(`${ESI_BASE}/universe/types/${id}/?datasource=tranquility`, {
-            headers: { "User-Agent": "met0-praisal/0.4.0" },
+            headers: { "User-Agent": "met0-praisal/0.5.0" },
           });
           if (!res.ok) return null;
           const data = await res.json();
