@@ -7,6 +7,7 @@ import ShareBar from "./components/ShareBar.jsx";
 import Tabs from "./components/Tabs.jsx";
 import LpStore from "./components/LpStore.jsx";
 import CorpStore from "./components/CorpStore.jsx";
+import Hauling from "./components/Hauling.jsx";
 import StationPicker, { readStoredStationId } from "./components/StationPicker.jsx";
 import AppraisalHistory from "./components/AppraisalHistory.jsx";
 import { addHistoryEntry } from "./lib/history.js";
@@ -18,6 +19,7 @@ const TAB_OPTIONS = [
   { value: "appraise", label: "Appraise" },
   { value: "lp", label: "LP Store" },
   { value: "corp", label: "Corp LP" },
+  { value: "hauling", label: "Hauling" },
 ];
 
 export default function App() {
@@ -32,7 +34,7 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("a")) return "appraise";
     const t = params.get("tab");
-    if (t === "lp" || t === "corp") return t;
+    if (t === "lp" || t === "corp" || t === "hauling") return t;
     return "appraise";
   });
 
@@ -44,7 +46,7 @@ export default function App() {
 
   function handleTabChange(next) {
     setTab(next);
-    const url = (next === "lp" || next === "corp") ? `?tab=${next}` : window.location.pathname;
+    const url = (next === "lp" || next === "corp" || next === "hauling") ? `?tab=${next}` : window.location.pathname;
     window.history.replaceState({}, "", url);
   }
 
@@ -123,7 +125,7 @@ export default function App() {
   return (
     <div className={styles.app}>
       <Header />
-      <main className={`${styles.main} ${(tab === "lp" || tab === "corp") ? styles.mainWide : ""}`}>
+      <main className={`${styles.main} ${(tab === "lp" || tab === "corp" || tab === "hauling") ? styles.mainWide : ""}`}>
         <Tabs value={tab} onChange={handleTabChange} options={TAB_OPTIONS} />
         {tab === "appraise" && (
           loadingShared ? (
@@ -168,8 +170,9 @@ export default function App() {
             </>
           )
         )}
-        {tab === "lp"   && <LpStore />}
-        {tab === "corp" && <CorpStore />}
+        {tab === "lp"      && <LpStore />}
+        {tab === "corp"    && <CorpStore />}
+        {tab === "hauling" && <Hauling />}
       </main>
       <footer className={styles.footer}>
         <span>met0-praisal v0.5.0</span>

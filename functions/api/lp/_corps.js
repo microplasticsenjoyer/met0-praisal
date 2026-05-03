@@ -22,25 +22,25 @@ export const LP_CORPS = {
     name: "24th Imperial Crusade",
     faction: "Amarr Empire",
     race: "Amarr",
-    ownNavyPrefixes: ["Imperial Navy", "Khanid Navy", "Amarr Empire", "Amarr Navy"],
+    ownNavyPrefixes: ["Imperial Navy", "Khanid Navy", "Amarr Empire", "Amarr Navy", "Amarr"],
   },
   1000181: {
     name: "Federal Defence Union",
     faction: "Gallente Federation",
     race: "Gallente",
-    ownNavyPrefixes: ["Federation Navy", "Federal Navy", "Gallente Federation"],
+    ownNavyPrefixes: ["Federation Navy", "Federal Navy", "Gallente Federation", "Gallente"],
   },
   1000180: {
     name: "State Protectorate",
     faction: "Caldari State",
     race: "Caldari",
-    ownNavyPrefixes: ["Caldari Navy", "Caldari State"],
+    ownNavyPrefixes: ["Caldari Navy", "Caldari State", "Caldari"],
   },
   1000182: {
     name: "Tribal Liberation Force",
     faction: "Minmatar Republic",
     race: "Minmatar",
-    ownNavyPrefixes: ["Republic Fleet", "Minmatar Republic"],
+    ownNavyPrefixes: ["Republic Fleet", "Minmatar Republic", "Minmatar"],
   },
   // Pirate Faction Warfare — leave unfiltered, no cross-faction navy issues.
   1000436: { name: "Malakim Zealots", faction: "Angel Cartel" },
@@ -48,18 +48,24 @@ export const LP_CORPS = {
 };
 
 // Faction-named navy/empire prefixes used to detect cross-faction items.
+// Longer/more-specific entries must come before the bare race name so the
+// startsWith loop short-circuits on the most-specific match first.
 const ALL_NAVY_PREFIXES = [
   "Imperial Navy",
   "Khanid Navy",
   "Amarr Empire",
   "Amarr Navy",
+  "Amarr",           // catches "Amarr Listening Outpost", "Amarr Shuttle", etc.
   "Federation Navy",
   "Federal Navy",
   "Gallente Federation",
+  "Gallente",        // catches "Gallente Battlecruiser" skills, etc.
   "Caldari Navy",
   "Caldari State",
+  "Caldari",         // catches "Caldari Shuttle", etc.
   "Republic Fleet",
   "Minmatar Republic",
+  "Minmatar",        // catches "Minmatar Shuttle", etc.
 ];
 
 // Faction Navy / Fleet Issue ship hulls. The hull name itself encodes the

@@ -1,0 +1,251 @@
+/* ── Controls ──────────────────────────────────────────────────────────── */
+
+.controls {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.shipGroup {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.costGroup {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.field { display: flex; flex-direction: column; gap: 4px; }
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  min-width: 240px;
+  transition: border-color 0.15s;
+}
+
+.select:focus { outline: none; border-color: var(--accent-dim); }
+
+.numInput {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  width: 120px;
+  transition: border-color 0.15s;
+}
+
+.numInput:focus { outline: none; border-color: var(--accent-dim); }
+.numInput::-webkit-inner-spin-button,
+.numInput::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.numInput[type=number] { -moz-appearance: textfield; }
+
+/* ── Status ─────────────────────────────────────────────────────────────── */
+
+.loading {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--accent);
+  letter-spacing: 0.1em;
+  padding: 16px 0;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+.error {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--danger);
+  border: 1px solid rgba(255,80,80,0.3);
+  background: rgba(255,80,80,0.06);
+  padding: 10px 14px;
+  margin: 8px 0;
+}
+
+/* ── Summary cards ───────────────────────────────────────────────────────── */
+
+.summaryCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1px;
+  border: 1px solid var(--border);
+  background: var(--border);
+  margin: 16px 0;
+}
+
+.summaryCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 12px;
+  gap: 4px;
+  background: var(--bg-panel, #0a0e14);
+}
+
+.cardLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.cardValue {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
+.cardValueSell { color: var(--sell) !important; }
+
+.cardSub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* Cargo card with progress bar */
+.cargoCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 12px;
+  gap: 6px;
+  background: var(--bg-panel, #0a0e14);
+}
+
+.progressBarWrap {
+  width: 100%;
+  height: 4px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+  max-width: 100%;
+}
+
+/* ── Warning banner ──────────────────────────────────────────────────────── */
+
+.warnBanner {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #ffb84d;
+  background: rgba(255,152,0,0.07);
+  border: 1px solid rgba(255,152,0,0.35);
+  padding: 8px 12px;
+  letter-spacing: 0.02em;
+  margin-bottom: 8px;
+}
+
+/* ── Table toolbar ───────────────────────────────────────────────────────── */
+
+.tableToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+}
+
+.meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+
+.wrapper { border: 1px solid var(--border); overflow-x: auto; }
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.table thead { background: rgba(0,0,0,0.3); position: sticky; top: 0; z-index: 1; }
+
+.table th {
+  padding: 10px 12px;
+  text-align: right;
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.table th:hover { color: var(--accent); }
+
+.thName  { text-align: left !important; }
+.thNum   { text-align: right; }
+.thHighlight { color: var(--accent) !important; }
+.thCargo { text-align: center !important; width: 80px; }
+
+.table td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.table tbody tr:last-child td { border-bottom: none; }
+.table tbody tr:nth-child(even) { background: rgba(255,255,255,0.015); }
+.table tbody tr:hover { background: rgba(0,200,255,0.04); }
+
+.tdName { text-align: left; color: var(--text); max-width: 280px; }
+.tdNum  { text-align: right; color: var(--text); white-space: nowrap; }
+.tdCargo { text-align: center; }
+
+.sell    { color: var(--sell)   !important; }
+.danger  { color: var(--danger) !important; }
+.highlight { font-weight: bold; font-size: 14px; }
+
+.link { color: var(--text); text-decoration: none; transition: color 0.15s; }
+.link:hover { color: var(--accent); text-decoration: underline; }
+
+/* ── Row states ──────────────────────────────────────────────────────────── */
+
+.rowInCargo { background: rgba(0,230,118,0.04) !important; }
+.rowPartial { background: rgba(255,152,0,0.04) !important; }
+.rowUnprofitable { opacity: 0.45; }
+
+.inCargoCheck { color: var(--sell); font-weight: bold; font-size: 14px; }
+.partialCheck { color: #ffb84d; font-size: 11px; font-family: var(--font-mono); }
+
+/* ── Mobile ──────────────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .summaryCards { grid-template-columns: repeat(2, 1fr); }
+  .shipGroup, .costGroup { width: 100%; }
+  .select { min-width: 0; width: 100%; }
+  .numInput { width: 88px; }
+}
