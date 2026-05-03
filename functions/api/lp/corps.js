@@ -34,7 +34,7 @@ export function onRequestGet() {
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
-      "Cache-Control": "public, max-age=86400",
+      "Cache-Control": "public, max-age=300",
     },
   });
 }
