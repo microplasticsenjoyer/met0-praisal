@@ -102,10 +102,12 @@ export default function LpStore() {
     return Number.isFinite(fromUrl) ? fromUrl : null;
   });
 
-  // Once corp list arrives, default to the first one if URL didn't pick.
+  // Once corp list arrives, validate the current corpId and fall back to the
+  // first corp if the stored ID isn't in the supported list (e.g. a stale URL
+  // param from before a corp-ID correction).
   useEffect(() => {
-    if (corpId != null) return;
     if (ALL_CORPS.length === 0) return;
+    if (corpId != null && ALL_CORPS.some((c) => c.id === corpId)) return;
     setCorpId(ALL_CORPS[0].id);
   }, [ALL_CORPS, corpId]);
   const [data, setData] = useState(null);
