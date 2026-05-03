@@ -96,20 +96,25 @@ function writeUrlParams(updates) {
 export default function LpStore() {
   const { groups: CORP_GROUPS, allCorps: ALL_CORPS, loading: corpsLoading } = useCorpGroups();
 
-  // Hydrate corp from URL (?corp=) if present and supported.
-  const [corpId, setCorpId] = useState(() => {
-    const fromUrl = parseInt(readUrlParam("corp") ?? "", 10);
-    return Number.isFinite(fromUrl) ? fromUrl : null;
-  });
+  // corpId starts null; resolved only after ALL_CORPS loads to avoid firing a
+  // fetch with a stale URL param (e.g. old corp ID from a previous session).
+  const [corpId, setCorpId] = useState(null);
 
-  // Once corp list arrives, validate the current corpId and fall back to the
-  // first corp if the stored ID isn't in the supported list (e.g. a stale URL
-  // param from before a corp-ID correction).
+  // Once the corp list arrives, pick the best starting corp:
+  //   1. URL param if valid; 2. first corp in the list.
+  // Runs only when ALL_CORPS changes (not on every setCorpId) so routine
+  // corp-selector changes don't re-trigger this guard.
   useEffect(() => {
     if (ALL_CORPS.length === 0) return;
-    if (corpId != null && ALL_CORPS.some((c) => c.id === corpId)) return;
-    setCorpId(ALL_CORPS[0].id);
-  }, [ALL_CORPS, corpId]);
+    const fromUrl = parseInt(readUrlParam("corp") ?? "", 10);
+    const preferred = Number.isFinite(fromUrl) ? fromUrl : null;
+    const valid = preferred != null && ALL_CORPS.some((c) => c.id === preferred);
+    if (valid) {
+      if (corpId !== preferred) setCorpId(preferred);
+    } else if (corpId == null || !ALL_CORPS.some((c) => c.id === corpId)) {
+      setCorpId(ALL_CORPS[0].id);
+    }
+  }, [ALL_CORPS]); // eslint-disable-line react-hooks/exhaustive-deps
   const [data, setData] = useState(null);
   const [history, setHistory] = useState({});
   const [loading, setLoading] = useState(false);
