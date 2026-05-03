@@ -7,14 +7,17 @@
 
 import { LP_CORPS } from "./_corps.js";
 
+// Pirate FW is listed first so Malakim Zealots (id 1000436) is the default
+// auto-selected corp on the LP Store tab. Main FW militias are placeholders
+// for now (see `disabled: true` in `_corps.js`) and shown as "coming soon".
 const GROUPS = [
-  {
-    label: "Main FW Militias",
-    corpIds: [1000179, 1000181, 1000180, 1000182],
-  },
   {
     label: "Pirate FW",
     corpIds: [1000436, 1000437],
+  },
+  {
+    label: "Main FW Militias",
+    corpIds: [1000179, 1000181, 1000180, 1000182],
   },
 ];
 
@@ -27,6 +30,7 @@ export function onRequestGet() {
         id,
         name: LP_CORPS[id].name,
         faction: LP_CORPS[id].faction,
+        disabled: !!LP_CORPS[id].disabled,
       })),
   }));
 

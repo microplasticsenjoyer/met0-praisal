@@ -17,30 +17,35 @@
 // Pirate FW militias have no race tag → unfiltered (their stores are clean).
 
 export const LP_CORPS = {
-  // Main Faction Warfare militias
+  // Main Faction Warfare militias — temporarily disabled while we investigate
+  // upstream errors. Kept in the map so the UI still shows them as placeholders.
   1000179: {
     name: "24th Imperial Crusade",
     faction: "Amarr Empire",
     race: "Amarr",
     ownNavyPrefixes: ["Imperial Navy", "Khanid Navy", "Amarr Empire", "Amarr Navy", "Amarr"],
+    disabled: true,
   },
   1000181: {
     name: "Federal Defence Union",
     faction: "Gallente Federation",
     race: "Gallente",
     ownNavyPrefixes: ["Federation Navy", "Federal Navy", "Gallente Federation", "Gallente"],
+    disabled: true,
   },
   1000180: {
     name: "State Protectorate",
     faction: "Caldari State",
     race: "Caldari",
     ownNavyPrefixes: ["Caldari Navy", "Caldari State", "Caldari"],
+    disabled: true,
   },
   1000182: {
     name: "Tribal Liberation Force",
     faction: "Minmatar Republic",
     race: "Minmatar",
     ownNavyPrefixes: ["Republic Fleet", "Minmatar Republic", "Minmatar"],
+    disabled: true,
   },
   // Pirate Faction Warfare — leave unfiltered, no cross-faction navy issues.
   1000436: { name: "Malakim Zealots", faction: "Angel Cartel" },
@@ -98,6 +103,10 @@ const NAVY_VARIANT_SUFFIXES = [" Navy Issue", " Fleet Issue"];
 
 export function isSupportedCorp(id) {
   return Object.prototype.hasOwnProperty.call(LP_CORPS, id);
+}
+
+export function isDisabledCorp(id) {
+  return !!LP_CORPS[id]?.disabled;
 }
 
 // Returns true if `name` is from a faction that doesn't belong to this corp.
