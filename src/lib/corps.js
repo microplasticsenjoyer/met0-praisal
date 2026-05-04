@@ -36,5 +36,8 @@ export function useCorpGroups() {
   // Without this, every render produces a new array reference and any effect
   // depending on it would loop with sibling effects that mutate URL/state.
   const allCorps = useMemo(() => groups.flatMap((g) => g.corps), [groups]);
-  return { groups, allCorps, loading, error };
+  // Default-selection candidates: skip placeholders so the picker doesn't
+  // land on a "coming soon" entry on first load.
+  const enabledCorps = useMemo(() => allCorps.filter((c) => !c.disabled), [allCorps]);
+  return { groups, allCorps, enabledCorps, loading, error };
 }

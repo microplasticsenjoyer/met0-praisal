@@ -94,14 +94,16 @@ function writeUrlParams(updates) {
 }
 
 export default function LpStore() {
-  const { groups: CORP_GROUPS, allCorps: ALL_CORPS, loading: corpsLoading } = useCorpGroups();
+  const { groups: CORP_GROUPS, allCorps: ALL_CORPS, enabledCorps: ENABLED_CORPS, loading: corpsLoading } = useCorpGroups();
 
   // corpId starts null; resolved only after ALL_CORPS loads to avoid firing a
   // fetch with a stale URL param (e.g. old corp ID from a previous session).
   const [corpId, setCorpId] = useState(null);
 
   // Once the corp list arrives, pick the best starting corp:
-  //   1. URL param if valid; 2. first corp in the list.
+  //   1. URL param if valid; 2. first enabled corp in the list.
+  // Disabled (placeholder) corps are honoured if the URL points to one so
+  // deep-links still work — the user just sees the "coming soon" panel.
   // Runs only when ALL_CORPS changes (not on every setCorpId) so routine
   // corp-selector changes don't re-trigger this guard.
   useEffect(() => {
@@ -109,12 +111,16 @@ export default function LpStore() {
     const fromUrl = parseInt(readUrlParam("corp") ?? "", 10);
     const preferred = Number.isFinite(fromUrl) ? fromUrl : null;
     const valid = preferred != null && ALL_CORPS.some((c) => c.id === preferred);
+    const fallback = ENABLED_CORPS[0]?.id ?? ALL_CORPS[0].id;
     if (valid) {
       if (corpId !== preferred) setCorpId(preferred);
     } else if (corpId == null || !ALL_CORPS.some((c) => c.id === corpId)) {
-      setCorpId(ALL_CORPS[0].id);
+      setCorpId(fallback);
     }
   }, [ALL_CORPS]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selectedCorp = ALL_CORPS.find((c) => c.id === corpId) ?? null;
+  const corpDisabled = !!selectedCorp?.disabled;
   const [data, setData] = useState(null);
   const [history, setHistory] = useState({});
   const [loading, setLoading] = useState(false);
@@ -218,6 +224,13 @@ export default function LpStore() {
 
   useEffect(() => {
     if (corpId == null) return;
+    if (corpDisabled) {
+      setLoading(false);
+      setError(null);
+      setData(null);
+      setHistory({});
+      return;
+    }
     let cancelled = false;
     async function load() {
       setLoading(true);
@@ -237,7 +250,7 @@ export default function LpStore() {
     }
     load();
     return () => { cancelled = true; };
-  }, [corpId]);
+  }, [corpId, corpDisabled]);
 
   // Background fetch: 30-day volume + price history for every product type.
   useEffect(() => {
@@ -473,7 +486,7 @@ export default function LpStore() {
                 <optgroup key={g.label} label={g.label}>
                   {g.corps.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.name} — {c.faction}
+                      {c.name} — {c.faction}{c.disabled ? " (coming soon)" : ""}
                     </option>
                   ))}
                 </optgroup>
@@ -531,10 +544,16 @@ export default function LpStore() {
         </div>
       </div>
 
-      {loading && <div className={styles.loading}>FETCHING LP STORE...</div>}
-      {error && <div className={styles.error}>⚠ {error}</div>}
+      {corpDisabled && (
+        <div className={styles.loading}>
+          {selectedCorp?.name ?? "This LP store"} — coming soon. We're working on it.
+        </div>
+      )}
 
-      {data && !loading && (
+      {!corpDisabled && loading && <div className={styles.loading}>FETCHING LP STORE...</div>}
+      {!corpDisabled && error && <div className={styles.error}>⚠ {error}</div>}
+
+      {!corpDisabled && data && !loading && (
         <>
           {/* Top Picks — shown once history loads, highest volume, coloured by profitability */}
           {topPicks.length > 0 && (

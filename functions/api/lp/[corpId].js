@@ -1,5 +1,5 @@
 import { getServiceClient } from "../_supabase.js";
-import { isSupportedCorp, isWrongFactionItem, LP_CORPS } from "./_corps.js";
+import { isSupportedCorp, isDisabledCorp, isWrongFactionItem, LP_CORPS } from "./_corps.js";
 import { resolveBlueprintRecipes } from "./_blueprints.js";
 
 const ESI_BASE = "https://esi.evetech.net/latest";
@@ -19,6 +19,12 @@ export async function onRequestGet({ params, env }) {
     const corpId = parseInt(params.corpId, 10);
     if (!corpId || !isSupportedCorp(corpId)) {
       return new Response(JSON.stringify({ error: "Unsupported corporation" }), { status: 400, headers });
+    }
+    if (isDisabledCorp(corpId)) {
+      return new Response(
+        JSON.stringify({ error: "Coming soon — this LP store is temporarily disabled.", disabled: true }),
+        { status: 503, headers }
+      );
     }
 
     const db = getServiceClient(env);

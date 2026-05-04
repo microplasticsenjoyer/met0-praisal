@@ -40,12 +40,17 @@ function timeAgo(isoString) {
 }
 
 export default function CorpStore() {
-  const { groups: CORP_GROUPS, allCorps: ALL_CORPS, loading: corpsLoading } = useCorpGroups();
+  const { groups: CORP_GROUPS, allCorps: ALL_CORPS, enabledCorps: ENABLED_CORPS, loading: corpsLoading } = useCorpGroups();
   const [corpId, setCorpId] = useState(null);
 
   useEffect(() => {
-    if (corpId == null && ALL_CORPS.length > 0) setCorpId(ALL_CORPS[0].id);
-  }, [ALL_CORPS, corpId]);
+    if (corpId == null && ALL_CORPS.length > 0) {
+      setCorpId(ENABLED_CORPS[0]?.id ?? ALL_CORPS[0].id);
+    }
+  }, [ALL_CORPS, ENABLED_CORPS, corpId]);
+
+  const selectedCorp = ALL_CORPS.find((c) => c.id === corpId) ?? null;
+  const corpDisabled = !!selectedCorp?.disabled;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -90,6 +95,12 @@ export default function CorpStore() {
 
   useEffect(() => {
     if (corpId == null) return;
+    if (corpDisabled) {
+      setLoading(false);
+      setError(null);
+      setData(null);
+      return;
+    }
     let cancelled = false;
     async function load() {
       setLoading(true);
@@ -108,7 +119,7 @@ export default function CorpStore() {
     }
     load();
     return () => { cancelled = true; };
-  }, [corpId]);
+  }, [corpId, corpDisabled]);
 
   function handleSort(key) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -225,7 +236,9 @@ export default function CorpStore() {
               {CORP_GROUPS.map((g) => (
                 <optgroup key={g.label} label={g.label}>
                   {g.corps.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name} — {c.faction}</option>
+                    <option key={c.id} value={c.id}>
+                      {c.name} — {c.faction}{c.disabled ? " (coming soon)" : ""}
+                    </option>
                   ))}
                 </optgroup>
               ))}
@@ -259,16 +272,22 @@ export default function CorpStore() {
         </div>
       </div>
 
-      {!acqPriceSet && !loading && data && (
+      {corpDisabled && (
+        <div className={styles.notice}>
+          {selectedCorp?.name ?? "This LP store"} — coming soon. We're working on it.
+        </div>
+      )}
+
+      {!corpDisabled && !acqPriceSet && !loading && data && (
         <div className={styles.notice}>
           Enter your LP acquisition cost above and click CALCULATE to see corp pricing.
         </div>
       )}
 
-      {loading && <div className={styles.loading}>FETCHING LP STORE...</div>}
-      {error   && <div className={styles.error}>⚠ {error}</div>}
+      {!corpDisabled && loading && <div className={styles.loading}>FETCHING LP STORE...</div>}
+      {!corpDisabled && error   && <div className={styles.error}>⚠ {error}</div>}
 
-      {data && !loading && acqPriceSet && (
+      {!corpDisabled && data && !loading && acqPriceSet && (
         <>
           {/* Top Deals banner */}
           {topDeals.length > 0 && (
