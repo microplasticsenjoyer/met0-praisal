@@ -380,87 +380,85 @@ export default function Hauling() {
     });
   }, [enrichedItems, mode, salesTax, reward, effectiveCargo]);
 
-  // ── Step 3: cargo-fill plan (greedy by net ISK/m³, capped by m³ + ISK) ─
-  const cargoFillPlan = useMemo(() => {
-    const empty = {
-      inCargo: new Set(), partialItem: null, partialFraction: 0, partialQty: 0,
-      cargoUsed: 0, remaining: effectiveCargo,
-      totalProfit: 0, totalSourceCost: 0, totalRevenue: 0, totalHaulCost: 0,
-      droppedByCargo: [], droppedByBudget: [], droppedNoMargin: [],
-    };
-    if (!items.length || effectiveCargo <= 0) return empty;
+  // ── Step 3: multi-trip cargo plan (greedy ISK/m³ fill, iterated) ──────
+  // Each pass fills one shipload; leftover items feed the next trip.
+  // Budget (if set) is shared across all trips. Caps at 20 trips.
+  const multiTripPlan = useMemo(() => {
+    const MAX_TRIPS = 20;
+    if (!items.length || effectiveCargo <= 0) return [];
 
-    const profitable = items
-      .filter((i) => i.isProfitable && i.volumeTotal != null && i.volumeTotal > 0 && i.effQty > 0)
+    let pool = items
+      .filter((i) => i.isProfitable && i.volumeTotal != null && i.volumeEach > 0 && i.effQty > 0)
+      .map((i) => ({ ...i, remainQty: i.effQty }))
       .sort((a, b) => b.netProfitPerM3 - a.netProfitPerM3);
 
-    const inCargo = new Set();
-    let remaining = effectiveCargo;
-    let budgetRemaining = budget > 0 ? budget : Infinity;
-    let totalProfit = 0;
-    let totalSourceCost = 0;
-    let totalRevenue = 0;
-    let totalHaulCost = 0;
-    let cargoUsed = 0;
-    let partialItem = null;
-    let partialFraction = 0;
-    let partialQty = 0;
-    const droppedByCargo = [];
-    const droppedByBudget = [];
+    let budgetLeft = budget > 0 ? budget : Infinity;
+    const trips = [];
 
-    for (const item of profitable) {
-      const fitsCargo  = item.volumeTotal <= remaining;
-      const fitsBudget = item.sourceCostTotal <= budgetRemaining;
+    while (pool.length > 0 && trips.length < MAX_TRIPS) {
+      let cargoLeft = effectiveCargo;
+      let budgetThisTrip = budgetLeft;
 
-      if (fitsCargo && fitsBudget) {
-        inCargo.add(item.typeID);
-        remaining        -= item.volumeTotal;
-        budgetRemaining  -= item.sourceCostTotal;
-        cargoUsed        += item.volumeTotal;
-        totalProfit      += item.netProfitTotal;
-        totalSourceCost  += item.sourceCostTotal;
-        totalRevenue     += item.destRevPerUnit * item.effQty;
-        totalHaulCost    += item.haulCostPerUnit * item.effQty;
-        continue;
+      const tripInCargo = new Set();
+      let tripPartialItem = null, tripPartialQty = 0, tripPartialFraction = 0;
+      let tripCargoUsed = 0, tripProfit = 0, tripCost = 0, tripRevenue = 0, tripHaulCost = 0;
+
+      for (const item of pool) {
+        const maxByCargo  = item.volumeEach > 0       ? Math.floor(cargoLeft     / item.volumeEach)       : 0;
+        const maxByBudget = item.sourceCostPerUnit > 0 ? Math.floor(budgetThisTrip / item.sourceCostPerUnit) : item.remainQty;
+        const fits = Math.max(0, Math.min(item.remainQty, maxByCargo, maxByBudget));
+        if (fits <= 0) continue;
+
+        const isFull = fits >= item.remainQty;
+        const qty    = isFull ? item.remainQty : fits;
+
+        if (isFull) {
+          tripInCargo.add(item.typeID);
+        } else if (tripPartialItem == null) {
+          tripPartialItem     = item.typeID;
+          tripPartialQty      = qty;
+          tripPartialFraction = qty / item.remainQty;
+        } else {
+          // A second partial would cause overlapping — skip to keep the plan
+          // clean. The remaining units will appear in the next trip.
+          continue;
+        }
+
+        cargoLeft      -= item.volumeEach * qty;
+        budgetThisTrip -= item.sourceCostPerUnit * qty;
+        tripCargoUsed  += item.volumeEach * qty;
+        tripProfit     += item.netProfitPerUnit * qty;
+        tripCost       += item.sourceCostPerUnit * qty;
+        tripRevenue    += item.destRevPerUnit * qty;
+        tripHaulCost   += item.haulCostPerUnit * qty;
       }
 
-      // Compute the largest partial qty that fits both caps.
-      const maxByCargo  = item.volumeEach > 0       ? Math.floor(remaining       / item.volumeEach)       : 0;
-      const maxByBudget = item.sourceCostPerUnit > 0 ? Math.floor(budgetRemaining / item.sourceCostPerUnit) : item.effQty;
-      const qty = Math.max(0, Math.min(item.effQty, maxByCargo, maxByBudget));
+      if (tripCargoUsed === 0) break;
 
-      if (qty > 0 && partialItem == null) {
-        partialItem     = item.typeID;
-        partialQty      = qty;
-        partialFraction = qty / item.effQty;
-        const partialVol  = item.volumeEach   * qty;
-        const partialCost = item.sourceCostPerUnit * qty;
-        cargoUsed        += partialVol;
-        remaining        -= partialVol;
-        budgetRemaining  -= partialCost;
-        totalProfit      += item.netProfitPerUnit * qty;
-        totalSourceCost  += partialCost;
-        totalRevenue     += item.destRevPerUnit * qty;
-        totalHaulCost    += item.haulCostPerUnit * qty;
-      }
+      // Reduce remaining quantities; drop fully-consumed items from the pool.
+      pool = pool.map((item) => {
+        if (tripInCargo.has(item.typeID))    return { ...item, remainQty: 0 };
+        if (tripPartialItem === item.typeID) return { ...item, remainQty: item.remainQty - tripPartialQty };
+        return item;
+      }).filter((item) => item.remainQty > 0);
 
-      // Record what got dropped and why so the user can see it.
-      if (!fitsCargo)  droppedByCargo.push({ ...item, qtyDropped: item.effQty - qty });
-      if (!fitsBudget) droppedByBudget.push({ ...item, qtyDropped: item.effQty - qty });
+      if (budget > 0) budgetLeft -= tripCost;
 
-      // Greedy continues — a smaller item later in the list may still fit even
-      // if the current heavy/expensive one didn't. We DON'T break here, which
-      // means partialItem locks to the first item that couldn't fit fully but
-      // had room for some.
+      trips.push({
+        num: trips.length + 1,
+        inCargo: tripInCargo,
+        partialItem: tripPartialItem,
+        partialQty: tripPartialQty,
+        partialFraction: tripPartialFraction,
+        cargoUsed: tripCargoUsed,
+        totalProfit: tripProfit,
+        totalSourceCost: tripCost,
+        totalRevenue: tripRevenue,
+        totalHaulCost: tripHaulCost,
+      });
     }
 
-    const droppedNoMargin = items.filter((i) => !i.isProfitable && i.netProfitPerM3 != null);
-    return {
-      inCargo, partialItem, partialFraction, partialQty,
-      cargoUsed, remaining,
-      totalProfit, totalSourceCost, totalRevenue, totalHaulCost,
-      droppedByCargo, droppedByBudget, droppedNoMargin,
-    };
+    return trips;
   }, [items, effectiveCargo, budget]);
 
   // ── Sorted view ────────────────────────────────────────────────────────
@@ -480,13 +478,43 @@ export default function Hauling() {
     return arr;
   }, [items, sortKey, sortDir]);
 
+  // Aggregate totals across all trips + per-item trip assignment lookup.
+  const planTotals = useMemo(() => {
+    let totalProfit = 0, totalCost = 0, totalHaulCost = 0;
+    for (const t of multiTripPlan) {
+      totalProfit   += t.totalProfit;
+      totalCost     += t.totalSourceCost;
+      totalHaulCost += t.totalHaulCost;
+    }
+    return { totalProfit, totalCost, totalHaulCost };
+  }, [multiTripPlan]);
+
+  // typeID → { tripNum, partial, fraction } for table rendering.
+  const itemTripMap = useMemo(() => {
+    const map = new Map();
+    for (const t of multiTripPlan) {
+      for (const id of t.inCargo) map.set(id, { tripNum: t.num, partial: false, fraction: 1 });
+      if (t.partialItem != null)
+        map.set(t.partialItem, { tripNum: t.num, partial: true, fraction: t.partialFraction });
+    }
+    return map;
+  }, [multiTripPlan]);
+
   const summary = useMemo(() => {
     const totalVolume = items.reduce((s, i) => s + (i.volumeTotal ?? 0), 0);
     const profitableCount = items.filter((i) => i.isProfitable).length;
     const unknownCount = (data?.items?.length ?? 0) - items.filter((i) => !i.unknown).length;
-    const cargoFillPct = effectiveCargo > 0 ? (cargoFillPlan.cargoUsed / effectiveCargo) * 100 : 0;
+    const firstTrip = multiTripPlan[0];
+    const cargoFillPct = firstTrip && effectiveCargo > 0
+      ? (firstTrip.cargoUsed / effectiveCargo) * 100 : 0;
     return { totalItems: items.length, unknownCount, totalVolume, profitableCount, cargoFillPct };
-  }, [items, cargoFillPlan, effectiveCargo, data]);
+  }, [items, multiTripPlan, effectiveCargo, data]);
+
+  // Items not assigned to any trip (unprofitable or pool exhausted by budget).
+  const droppedNoMargin = useMemo(
+    () => items.filter((i) => !i.isProfitable && i.netProfitPerM3 != null),
+    [items]
+  );
 
   function handleSort(key) {
     setSortDir((d) => sortKey === key ? (d === "desc" ? "asc" : "desc") : "desc");
@@ -650,34 +678,62 @@ export default function Hauling() {
               <span className={styles.cardValue}>{summary.totalItems.toLocaleString()}</span>
               {summary.unknownCount > 0 && <span className={styles.cardSub}>{summary.unknownCount} unresolved</span>}
             </div>
+            {multiTripPlan.length > 1 && (
+              <div className={styles.summaryCard}>
+                <span className={styles.cardLabel}>TRIPS</span>
+                <span className={styles.cardValue}>{multiTripPlan.length}</span>
+                <span className={styles.cardSub}>to move all cargo</span>
+              </div>
+            )}
             <div className={styles.summaryCard}>
-              <span className={styles.cardLabel}>BUY-IN COST</span>
-              <span className={styles.cardValue}>{fmt(cargoFillPlan.totalSourceCost)}</span>
+              <span className={styles.cardLabel}>TOTAL BUY-IN</span>
+              <span className={styles.cardValue}>{fmt(planTotals.totalCost)}</span>
               <span className={styles.cardSub}>at {sourceShort}</span>
             </div>
             {mode === "courier" && (
               <div className={styles.summaryCard}>
-                <span className={styles.cardLabel}>REWARD PAID</span>
-                <span className={styles.cardValue}>{fmt(cargoFillPlan.totalHaulCost)}</span>
+                <span className={styles.cardLabel}>TOTAL REWARD</span>
+                <span className={styles.cardValue}>{fmt(planTotals.totalHaulCost)}</span>
                 <span className={styles.cardSub}>courier reward</span>
               </div>
             )}
             <div className={styles.summaryCard}>
-              <span className={styles.cardLabel}>TRIP PROFIT</span>
-              <span className={`${styles.cardValue} ${cargoFillPlan.totalProfit >= 0 ? styles.cardValueSell : styles.danger}`}>
-                {fmt(cargoFillPlan.totalProfit)}
+              <span className={styles.cardLabel}>{multiTripPlan.length > 1 ? "TOTAL PROFIT" : "TRIP PROFIT"}</span>
+              <span className={`${styles.cardValue} ${planTotals.totalProfit >= 0 ? styles.cardValueSell : styles.danger}`}>
+                {fmt(planTotals.totalProfit)}
               </span>
               <span className={styles.cardSub}>{mode === "self" ? "after sales tax" : "after courier reward"}</span>
             </div>
             <div className={styles.cargoCard}>
-              <span className={styles.cardLabel}>CARGO USED</span>
-              <span className={styles.cardValue}>{fmtVol(cargoFillPlan.cargoUsed)} / {fmtVol(effectiveCargo)}</span>
+              <span className={styles.cardLabel}>TRIP 1 CARGO</span>
+              <span className={styles.cardValue}>{fmtVol(multiTripPlan[0]?.cargoUsed ?? 0)} / {fmtVol(effectiveCargo)}</span>
               <div className={styles.progressBarWrap}>
                 <div className={styles.progressFill} style={{ width: `${Math.min(summary.cargoFillPct, 100)}%` }} />
               </div>
               <span className={styles.cardSub}>{summary.cargoFillPct.toFixed(1)}% full</span>
             </div>
           </div>
+
+          {/* Per-trip breakdown (only shown when > 1 trip) */}
+          {multiTripPlan.length > 1 && (
+            <div className={styles.tripBreakdown}>
+              {multiTripPlan.map((t) => {
+                const pct = effectiveCargo > 0 ? (t.cargoUsed / effectiveCargo) * 100 : 0;
+                return (
+                  <div key={t.num} className={styles.tripRow}>
+                    <span className={styles.tripLabel}>TRIP {t.num}</span>
+                    <span className={styles.tripStat}><span className={styles.tripStatLabel}>BUY-IN</span>{fmt(t.totalSourceCost)}</span>
+                    <span className={`${styles.tripStat} ${t.totalProfit >= 0 ? styles.sell : styles.danger}`}><span className={styles.tripStatLabel}>PROFIT</span>{fmt(t.totalProfit)}</span>
+                    <span className={styles.tripStat}><span className={styles.tripStatLabel}>CARGO</span>{fmtVol(t.cargoUsed)}</span>
+                    <div className={styles.tripBarWrap}>
+                      <div className={styles.tripBarFill} style={{ width: `${Math.min(pct, 100)}%` }} />
+                    </div>
+                    <span className={styles.tripBarPct}>{pct.toFixed(0)}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {summary.profitableCount === 0 && (
             <div className={styles.warnBanner}>
@@ -722,15 +778,17 @@ export default function Hauling() {
                   {mode === "courier" && <th className={styles.thNum}  onClick={() => handleSort("haulCostPerUnit")}>HAUL {arr("haulCostPerUnit")}</th>}
                   <th className={styles.thNum}  onClick={() => handleSort("netProfitTotal")}>NET PROFIT {arr("netProfitTotal")}</th>
                   <th className={`${styles.thNum} ${styles.thHighlight}`} onClick={() => handleSort("netProfitPerM3")}>ISK/m³ {arr("netProfitPerM3")}</th>
-                  <th className={styles.thCargo}>IN CARGO</th>
+                  <th className={styles.thCargo}>{multiTripPlan.length > 1 ? "TRIP" : "IN CARGO"}</th>
                 </tr>
               </thead>
               <tbody>
                 {sortedItems.map((item, i) => {
-                  const inCargo  = cargoFillPlan.inCargo.has(item.typeID);
-                  const isPartial = cargoFillPlan.partialItem === item.typeID;
+                  const assignment = itemTripMap.get(item.typeID);
+                  const inPlan   = !!assignment;
+                  const isPartial = assignment?.partial ?? false;
+                  const tripNum   = assignment?.tripNum ?? null;
                   const rowClass = [
-                    inCargo                                          ? styles.rowInCargo      : "",
+                    inPlan && !isPartial                             ? styles.rowInCargo      : "",
                     isPartial                                        ? styles.rowPartial      : "",
                     !item.isProfitable && item.netProfitPerM3 != null ? styles.rowUnprofitable : "",
                   ].filter(Boolean).join(" ");
@@ -759,9 +817,16 @@ export default function Hauling() {
                         {item.netProfitPerM3 != null ? fmt(item.netProfitPerM3) : "—"}
                       </td>
                       <td className={styles.tdCargo}>
-                        {inCargo   && <span className={styles.inCargoCheck}>✓</span>}
+                        {inPlan && !isPartial && multiTripPlan.length > 1 && (
+                          <span className={styles.inCargoCheck}>T{tripNum}</span>
+                        )}
+                        {inPlan && !isPartial && multiTripPlan.length === 1 && (
+                          <span className={styles.inCargoCheck}>✓</span>
+                        )}
                         {isPartial && (
-                          <span className={styles.partialCheck}>~{Math.round(cargoFillPlan.partialFraction * 100)}%</span>
+                          <span className={styles.partialCheck}>
+                            {multiTripPlan.length > 1 ? `T${tripNum} ` : ""}~{Math.round((assignment?.fraction ?? 0) * 100)}%
+                          </span>
                         )}
                       </td>
                     </tr>
@@ -772,37 +837,13 @@ export default function Hauling() {
           </div>
 
           {/* Dropped items breakdown */}
-          {(cargoFillPlan.droppedByCargo.length > 0 || cargoFillPlan.droppedByBudget.length > 0 || cargoFillPlan.droppedNoMargin.length > 0) && (
+          {droppedNoMargin.length > 0 && (
             <div className={styles.droppedPanel}>
               <div className={styles.droppedHeader}>LEFT BEHIND</div>
-              {cargoFillPlan.droppedByCargo.length > 0 && (
-                <div className={styles.droppedRow}>
-                  <span className={styles.droppedLabel}>cargo full:</span>
-                  {cargoFillPlan.droppedByCargo.slice(0, 5).map((d) => (
-                    <span key={`c-${d.typeID}`} className={styles.droppedItem} title={`${d.qtyDropped.toLocaleString()} units couldn't fit`}>
-                      {d.name} <span className={styles.droppedQty}>({fmt(d.netProfitPerM3)} isk/m³)</span>
-                    </span>
-                  ))}
-                  {cargoFillPlan.droppedByCargo.length > 5 && <span className={styles.droppedMore}>+{cargoFillPlan.droppedByCargo.length - 5} more</span>}
-                </div>
-              )}
-              {cargoFillPlan.droppedByBudget.length > 0 && (
-                <div className={styles.droppedRow}>
-                  <span className={styles.droppedLabel}>budget exhausted:</span>
-                  {cargoFillPlan.droppedByBudget.slice(0, 5).map((d) => (
-                    <span key={`b-${d.typeID}`} className={styles.droppedItem} title={`needed ${fmt(d.sourceCostTotal)} ISK`}>
-                      {d.name} <span className={styles.droppedQty}>({fmt(d.sourceCostTotal)} isk)</span>
-                    </span>
-                  ))}
-                  {cargoFillPlan.droppedByBudget.length > 5 && <span className={styles.droppedMore}>+{cargoFillPlan.droppedByBudget.length - 5} more</span>}
-                </div>
-              )}
-              {cargoFillPlan.droppedNoMargin.length > 0 && (
-                <div className={styles.droppedRow}>
-                  <span className={styles.droppedLabel}>unprofitable:</span>
-                  <span className={styles.droppedQty}>{cargoFillPlan.droppedNoMargin.length} item(s) priced under haul cost</span>
-                </div>
-              )}
+              <div className={styles.droppedRow}>
+                <span className={styles.droppedLabel}>unprofitable:</span>
+                <span className={styles.droppedQty}>{droppedNoMargin.length} item(s) priced under haul cost</span>
+              </div>
             </div>
           )}
         </>
