@@ -10,6 +10,7 @@ import CorpStore from "./components/CorpStore.jsx";
 import Hauling from "./components/Hauling.jsx";
 import StationPicker, { readStoredStationId } from "./components/StationPicker.jsx";
 import AppraisalHistory from "./components/AppraisalHistory.jsx";
+import Trading from "./components/Trading.jsx";
 import { addHistoryEntry } from "./lib/history.js";
 import styles from "./App.module.css";
 
@@ -17,10 +18,19 @@ const DEFAULT_STATION = 60003760;
 
 const TAB_OPTIONS = [
   { value: "appraise", label: "Appraise" },
+  { value: "trading", label: "Trading" },
   { value: "lp", label: "LP Store" },
   { value: "corp", label: "Corp LP" },
   { value: "hauling", label: "Hauling" },
 ];
+
+const APPRAISE_PREFIX = "met0:appraise:";
+function readAppraiseFee(key, fallback) {
+  try {
+    const v = parseFloat(localStorage.getItem(APPRAISE_PREFIX + key) ?? "");
+    return Number.isFinite(v) && v >= 0 ? v : fallback;
+  } catch { return fallback; }
+}
 
 export default function App() {
   const [results, setResults] = useState(null);
@@ -34,9 +44,13 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("a")) return "appraise";
     const t = params.get("tab");
-    if (t === "lp" || t === "corp" || t === "hauling") return t;
+    if (["lp", "corp", "hauling", "trading"].includes(t)) return t;
     return "appraise";
   });
+  const [appraiseFees, setAppraiseFees] = useState(() => ({
+    salesTax: readAppraiseFee("salesTax", 4.5),
+    brokerFee: readAppraiseFee("brokerFee", 2.5),
+  }));
 
   // On load, check if URL has a slug (e.g. /?a=x7k2p)
   useEffect(() => {
@@ -46,7 +60,8 @@ export default function App() {
 
   function handleTabChange(next) {
     setTab(next);
-    const url = (next === "lp" || next === "corp" || next === "hauling") ? `?tab=${next}` : window.location.pathname;
+    const nonAppraiseTabs = ["lp", "corp", "hauling", "trading"];
+    const url = nonAppraiseTabs.includes(next) ? `?tab=${next}` : window.location.pathname;
     window.history.replaceState({}, "", url);
   }
 
@@ -156,6 +171,7 @@ export default function App() {
                     count={results.items.length}
                     pricesUpdatedAt={results.pricesUpdatedAt ?? null}
                     stationId={results.stationId ?? null}
+                    onFeesChange={setAppraiseFees}
                     totalVolume={(() => {
                       let vol = null;
                       for (const item of results.items) {
@@ -164,12 +180,13 @@ export default function App() {
                       return vol;
                     })()}
                   />
-                  <ResultsTable items={results.items} />
+                  <ResultsTable items={results.items} fees={appraiseFees} />
                 </>
               )}
             </>
           )
         )}
+        {tab === "trading" && <Trading />}
         {tab === "lp"      && <LpStore />}
         {tab === "corp"    && <CorpStore />}
         {tab === "hauling" && <Hauling />}

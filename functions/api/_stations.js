@@ -5,11 +5,12 @@
 export const JITA_STATION = 60003760;
 
 export const STATIONS = [
-  { id: 60003760, name: "Jita 4-4",     region: "The Forge",    short: "Jita" },
-  { id: 60008494, name: "Amarr VIII",   region: "Domain",       short: "Amarr" },
-  { id: 60011866, name: "Dodixie IX-19", region: "Sinq Laison", short: "Dodixie" },
-  { id: 60005686, name: "Hek VIII-12",  region: "Metropolis",   short: "Hek" },
-  { id: 60004588, name: "Rens VI-8",    region: "Heimatar",     short: "Rens" },
+  { id: 60003760, name: "Jita 4-4",     region: "The Forge",      short: "Jita" },
+  { id: 60008494, name: "Amarr VIII",   region: "Domain",         short: "Amarr" },
+  { id: 60011866, name: "Dodixie IX-19", region: "Sinq Laison",   short: "Dodixie" },
+  { id: 60005686, name: "Hek VIII-12",  region: "Metropolis",     short: "Hek" },
+  { id: 60004588, name: "Rens VI-8",    region: "Heimatar",       short: "Rens" },
+  { id: 60011884, name: "Huola IV",     region: "The Bleak Lands", short: "Huola" },
 ];
 
 const STATION_IDS = new Set(STATIONS.map((s) => s.id));

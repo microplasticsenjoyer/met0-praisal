@@ -61,7 +61,7 @@ function parseShares(s) {
   return Math.min(n, 999);
 }
 
-export default function Summary({ totalBuy, totalSell, count, totalVolume, pricesUpdatedAt, stationId }) {
+export default function Summary({ totalBuy, totalSell, count, totalVolume, pricesUpdatedAt, stationId, onFeesChange }) {
   const [draftSales,  setDraftSales]  = useState(() => readStored("salesTax",  String(DEFAULT_SALES_TAX)));
   const [draftBroker, setDraftBroker] = useState(() => readStored("brokerFee", String(DEFAULT_BROKER_FEE)));
   const [salesTax,    setSalesTax]    = useState(() => parseTax(readStored("salesTax",  String(DEFAULT_SALES_TAX)),  DEFAULT_SALES_TAX));
@@ -82,6 +82,7 @@ export default function Summary({ totalBuy, totalSell, count, totalVolume, price
     writeStored("salesTax",  draftSales);
     writeStored("brokerFee", draftBroker);
     writeStored("shares",    String(n));
+    onFeesChange?.({ salesTax: s, brokerFee: b });
   }
 
   const split = (totalBuy + totalSell) / 2;

@@ -33,7 +33,9 @@ function isVolumeLight(item) {
   );
 }
 
-export default function ResultsTable({ items }) {
+export default function ResultsTable({ items, fees }) {
+  const salesTax  = fees?.salesTax  ?? 0;
+  const brokerFee = fees?.brokerFee ?? 0;
   const [sortKey, setSortKey] = useState("sellTotal");
   const [sortDir, setSortDir] = useState("desc");
 
@@ -42,9 +44,14 @@ export default function ResultsTable({ items }) {
     else { setSortKey(key); setSortDir("desc"); }
   }
 
+  const sellFeesMult = 1 - (salesTax + brokerFee) / 100;
+  const buyFeesMult  = 1 - salesTax / 100;
+
   const withVolume = items.map((item) => ({
     ...item,
     volumeTotal: item.volumeEach != null ? item.volumeEach * item.quantity : null,
+    netSellEach: item.sellEach > 0 ? item.sellEach * sellFeesMult : null,
+    netBuyEach:  item.buyEach  > 0 ? item.buyEach  * buyFeesMult  : null,
   }));
 
   const sorted = [...withVolume].sort((a, b) => {
@@ -85,7 +92,9 @@ export default function ResultsTable({ items }) {
               </th>
               <th className={styles.thNum} onClick={() => handleSort("volumeTotal")}>VOLUME{arr("volumeTotal")}</th>
               <th className={styles.thNum} onClick={() => handleSort("sellEach")}>SELL / UNIT{arr("sellEach")}</th>
+              <th className={styles.thNum} onClick={() => handleSort("netSellEach")} title={`After ${salesTax}% sales tax + ${brokerFee}% broker fee`}>NET SELL{arr("netSellEach")}</th>
               <th className={styles.thNum} onClick={() => handleSort("buyEach")}>BUY / UNIT{arr("buyEach")}</th>
+              <th className={styles.thNum} onClick={() => handleSort("netBuyEach")} title={`After ${salesTax}% sales tax (no broker fee on instant sell)`}>NET BUY{arr("netBuyEach")}</th>
               <th className={styles.thNum} onClick={() => handleSort("sellTotal")}>SELL TOTAL{arr("sellTotal")}</th>
               <th className={styles.thNum} onClick={() => handleSort("buyTotal")}>BUY TOTAL{arr("buyTotal")}</th>
             </tr>
@@ -112,7 +121,9 @@ export default function ResultsTable({ items }) {
                   <td className={`${styles.tdNum} ${light ? styles.danger : ""}`}>{fmtCount(item.sellVolume)}</td>
                   <td className={`${styles.tdNum} ${styles.volCell}`}>{fmtVol(item.volumeTotal)}</td>
                   <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(item.sellEach)}</td>
+                  <td className={`${styles.tdNum} ${styles.sell}`}>{item.netSellEach != null ? fmt(item.netSellEach) : "—"}</td>
                   <td className={`${styles.tdNum} ${styles.buy}`}>{fmt(item.buyEach)}</td>
+                  <td className={`${styles.tdNum} ${styles.buy}`}>{item.netBuyEach != null ? fmt(item.netBuyEach) : "—"}</td>
                   <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(item.sellTotal)}</td>
                   <td className={`${styles.tdNum} ${styles.buy}`}>{fmt(item.buyTotal)}</td>
                 </tr>

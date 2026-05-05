@@ -1,13 +1,31 @@
 .controls {
   display: flex;
-  gap: 16px;
-  align-items: flex-end;
+  gap: 12px;
+  align-items: flex-start;
   flex-wrap: wrap;
   margin-bottom: 12px;
 }
 
-.selectorGroup { display: flex; gap: 16px; flex-wrap: wrap; }
-.taxGroup { display: flex; gap: 12px; align-items: flex-end; }
+.feeGroup {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.noteGroup {
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: 9px;
+}
+
+.feeNote {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+}
+
 .field { display: flex; flex-direction: column; gap: 4px; }
 
 .label {
@@ -19,17 +37,6 @@
   text-transform: uppercase;
 }
 
-.select, .search {
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 8px 10px;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  min-width: 280px;
-}
-.select:focus, .search:focus { outline: none; border-color: var(--accent-dim); }
-
 .numInput {
   background: var(--bg-input);
   border: 1px solid var(--border);
@@ -37,7 +44,8 @@
   padding: 8px 10px;
   font-family: var(--font-mono);
   font-size: 13px;
-  width: 140px;
+  width: 90px;
+  transition: border-color 0.15s;
 }
 .numInput:focus { outline: none; border-color: var(--accent-dim); }
 
@@ -54,17 +62,6 @@
   white-space: nowrap;
 }
 .calcBtn:hover { border-color: var(--accent); color: var(--text-bright); }
-
-.notice {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--accent-dim);
-  letter-spacing: 0.08em;
-  border: 1px dashed var(--border-bright);
-  padding: 12px 16px;
-  margin-bottom: 12px;
-  text-align: center;
-}
 
 .loading {
   font-family: var(--font-mono);
@@ -84,92 +81,59 @@
   padding: 12px 16px;
   font-family: var(--font-mono);
   font-size: 13px;
+  margin-bottom: 8px;
 }
 
-/* ── Top Deals ───────────────────────────────────────────────────────────── */
-.topDeals {
+/* ── Summary bar ─────────────────────────────────────────────────────────── */
+
+.summaryBar {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
   margin-bottom: 12px;
-  padding: 10px 14px;
-  border: 1px solid var(--border-bright);
-  background: rgba(0, 230, 118, 0.03);
+  overflow: hidden;
 }
 
-.topDealsLabel {
+.summaryItem {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 12px;
+  gap: 3px;
+}
+
+.summaryLabel {
   font-family: var(--font-mono);
   font-size: 10px;
-  font-weight: 600;
-  color: var(--sell);
-  letter-spacing: 0.14em;
-  margin-bottom: 8px;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
   text-transform: uppercase;
 }
 
-@keyframes tickerScroll {
-  0%   { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
-}
-
-.topDealsScroller {
-  overflow: hidden;
-  width: 100%;
-}
-
-.topDealsTrack {
-  display: flex;
-  gap: 8px;
-  width: max-content;
-  animation: tickerScroll 30s linear infinite;
-}
-
-.topDealsTrack:hover {
-  animation-play-state: paused;
-}
-
-.topDealCard {
-  border: 1px solid rgba(0, 230, 118, 0.25);
-  padding: 8px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 160px;
-  max-width: 240px;
-  background: rgba(0, 0, 0, 0.25);
-}
-
-.topDealName {
-  color: var(--text);
+.summaryValue {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 20px;
+  color: var(--text-bright);
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.topDealStats { display: flex; gap: 12px; }
-.topDealStat { display: flex; align-items: baseline; gap: 3px; }
-
-.topDealPct {
+.summarySub {
   font-family: var(--font-mono);
-  font-size: 14px;
-  font-weight: bold;
-  color: var(--sell);
-}
-
-.topDealPrice {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--text);
-}
-
-.topDealStatLabel {
-  font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text-dim);
-  letter-spacing: 0.1em;
 }
 
-/* ── Table toolbar ───────────────────────────────────────────────────────── */
+.summaryDivider {
+  width: 1px;
+  background: var(--border);
+  align-self: stretch;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+
 .tableToolbar {
   display: flex;
   justify-content: space-between;
@@ -184,8 +148,6 @@
   color: var(--text-dim);
   letter-spacing: 0.08em;
 }
-
-.cacheAge { font-size: 10px; opacity: 0.85; margin-top: 3px; letter-spacing: 0.06em; }
 
 .toolbarBtns { display: flex; gap: 8px; align-items: center; }
 
@@ -205,6 +167,7 @@
 .toggleBtnActive { border-color: var(--accent) !important; color: var(--accent) !important; }
 
 /* ── Table ───────────────────────────────────────────────────────────────── */
+
 .wrapper { border: 1px solid var(--border); overflow-x: auto; }
 
 .table {
@@ -231,66 +194,36 @@
   transition: color 0.15s;
 }
 .table th:hover { color: var(--accent); }
-
 .thName { text-align: left !important; }
-.thNum { text-align: right; }
+.thNum  { text-align: right; }
 .thHighlight { color: var(--accent) !important; }
-.thSort { color: var(--sell) !important; }
 
 .table td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .table tbody tr:last-child td { border-bottom: none; }
 .table tbody tr:nth-child(even) { background: rgba(255,255,255,0.015); }
 .table tbody tr:hover { background: rgba(0,200,255,0.04); }
 
-.tdName { text-align: left; color: var(--text); max-width: 300px; }
-.tdNum { text-align: right; color: var(--text); white-space: nowrap; }
+.tdName { text-align: left; color: var(--text); max-width: 260px; }
+.tdNum  { text-align: right; color: var(--text); white-space: nowrap; }
 
 .highlight { font-weight: bold; font-size: 14px; }
-.pctCell   { font-weight: bold; font-size: 14px; }
-.sell      { color: var(--sell) !important; }
-.danger    { color: var(--danger) !important; }
+.sell   { color: var(--sell) !important; }
+.buy    { color: var(--buy)  !important; }
+.danger { color: var(--danger) !important; }
 
-/* Row-level highlights */
 .rowGreat { background: rgba(0, 230, 118, 0.04) !important; }
-.rowBad   { background: rgba(255, 68,  68,  0.04) !important; }
-
-.nameRow { display: flex; align-items: center; gap: 6px; }
+.rowBad   { background: rgba(255, 68, 68,  0.04) !important; }
 
 .link { color: var(--text); text-decoration: none; transition: color 0.15s; }
 .link:hover { color: var(--accent); text-decoration: underline; }
 
-.copyBtn {
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  cursor: pointer;
-  font-size: 12px;
-  padding: 0 2px;
-  opacity: 0;
-  transition: opacity 0.15s, color 0.15s;
-  line-height: 1;
-  flex-shrink: 0;
-}
-.tdName:hover .copyBtn, .copyBtn:focus { opacity: 1; }
-.copyBtnDone { color: var(--sell) !important; opacity: 1 !important; }
-
-.inputs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--text-dim);
-}
-.input::before { content: "↳ "; opacity: 0.5; }
-
 /* ── Mobile ───────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
-  .controls { gap: 10px; }
-  .selectorGroup { width: 100%; }
-  .select, .search { min-width: 0; width: 100%; }
-  .taxGroup { flex-wrap: wrap; gap: 8px; }
-  .numInput { width: 110px; }
+  .feeGroup { flex-wrap: wrap; gap: 8px; }
+  .numInput { width: 72px; }
+  .summaryBar { flex-wrap: wrap; }
+  .summaryDivider { display: none; }
+  .summaryItem { min-width: 45%; }
 }
 
 /* ── Desktop ──────────────────────────────────────────────────────────────── */
@@ -298,5 +231,4 @@
   .table { font-size: 15px; }
   .table th { font-size: 11px; }
   .highlight { font-size: 16px; }
-  .pctCell   { font-size: 16px; }
 }

@@ -293,22 +293,24 @@ export default function CorpStore() {
           {topDeals.length > 0 && (
             <div className={styles.topDeals}>
               <div className={styles.topDealsLabel}>TOP DEALS FOR MEMBERS — best savings vs Jita</div>
-              <div className={styles.topDealsCards}>
-                {topDeals.map((o) => (
-                  <div key={o.offerId} className={styles.topDealCard}>
-                    <span className={styles.topDealName} title={o.name}>{o.name}</span>
-                    <div className={styles.topDealStats}>
-                      <div className={styles.topDealStat}>
-                        <span className={styles.topDealPct}>{fmtPct(o.pctSavings)}</span>
-                        <span className={styles.topDealStatLabel}>SAVED</span>
-                      </div>
-                      <div className={styles.topDealStat}>
-                        <span className={styles.topDealPrice}>{fmt(o.corpPrice)}</span>
-                        <span className={styles.topDealStatLabel}>CORP / UNIT</span>
+              <div className={styles.topDealsScroller}>
+                <div className={styles.topDealsTrack}>
+                  {[...topDeals, ...topDeals].map((o, i) => (
+                    <div key={`${o.offerId}-${i}`} className={styles.topDealCard}>
+                      <span className={styles.topDealName} title={o.name}>{o.name}</span>
+                      <div className={styles.topDealStats}>
+                        <div className={styles.topDealStat}>
+                          <span className={styles.topDealPct}>{fmtPct(o.pctSavings)}</span>
+                          <span className={styles.topDealStatLabel}>SAVED</span>
+                        </div>
+                        <div className={styles.topDealStat}>
+                          <span className={styles.topDealPrice}>{fmt(o.corpPrice)}</span>
+                          <span className={styles.topDealStatLabel}>CORP / UNIT</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           )}
