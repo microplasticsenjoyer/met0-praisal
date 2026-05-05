@@ -104,7 +104,26 @@
   text-transform: uppercase;
 }
 
-.topDealsCards { display: flex; flex-wrap: wrap; gap: 8px; }
+@keyframes tickerScroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.topDealsScroller {
+  overflow: hidden;
+  width: 100%;
+}
+
+.topDealsTrack {
+  display: flex;
+  gap: 8px;
+  width: max-content;
+  animation: tickerScroll 30s linear infinite;
+}
+
+.topDealsTrack:hover {
+  animation-play-state: paused;
+}
 
 .topDealCard {
   border: 1px solid rgba(0, 230, 118, 0.25);

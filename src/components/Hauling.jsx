@@ -5,11 +5,12 @@ import { HAULING_SHIPS } from "../lib/haulingShips.js";
 
 const STORAGE_PREFIX = "met0:hauling:";
 const FALLBACK_STATIONS = [
-  { id: 60003760, name: "Jita 4-4",      region: "The Forge",    short: "Jita" },
-  { id: 60008494, name: "Amarr VIII",    region: "Domain",       short: "Amarr" },
-  { id: 60011866, name: "Dodixie IX-19", region: "Sinq Laison",  short: "Dodixie" },
-  { id: 60005686, name: "Hek VIII-12",   region: "Metropolis",   short: "Hek" },
-  { id: 60004588, name: "Rens VI-8",     region: "Heimatar",     short: "Rens" },
+  { id: 60003760, name: "Jita 4-4",      region: "The Forge",      short: "Jita" },
+  { id: 60008494, name: "Amarr VIII",    region: "Domain",         short: "Amarr" },
+  { id: 60011866, name: "Dodixie IX-19", region: "Sinq Laison",    short: "Dodixie" },
+  { id: 60005686, name: "Hek VIII-12",   region: "Metropolis",     short: "Hek" },
+  { id: 60004588, name: "Rens VI-8",     region: "Heimatar",       short: "Rens" },
+  { id: 60011884, name: "Huola IV",      region: "The Bleak Lands", short: "Huola" },
 ];
 
 let stationsPromise = null;
@@ -108,14 +109,11 @@ export default function Hauling() {
     const m = readUrlParam("mode") ?? readStored("mode", "self");
     return m === "courier" ? "courier" : "self";
   });
-  const [costPerM3, setCostPerM3] = useState(() =>
-    parseFloat(readUrlParam("cm3") ?? "") || parseStored("costPerM3", 1000)
-  );
   const [salesTax, setSalesTax]   = useState(() =>
     parseFloat(readUrlParam("tax") ?? "") || parseStored("salesTax", 3.6)
   );
-  const [collateralRate, setCollateralRate] = useState(() =>
-    parseFloat(readUrlParam("coll") ?? "") || parseStored("collateralRate", 1.5)
+  const [collateralISK, setCollateralISK] = useState(() =>
+    parseFloat(readUrlParam("coll") ?? "") || parseStored("collateralISK", 0)
   );
   const [reward, setReward] = useState(() =>
     parseFloat(readUrlParam("rwd") ?? "") || parseStored("reward", 0)
@@ -151,13 +149,12 @@ export default function Hauling() {
       to: destStationId,
       ship: shipId,
       mode: mode === "self" ? null : mode,
-      cm3: mode === "self" && costPerM3 ? costPerM3 : null,
-      tax: salesTax || null,
-      coll: mode === "courier" && collateralRate ? collateralRate : null,
+      tax: mode === "self" ? (salesTax || null) : null,
+      coll: mode === "courier" && collateralISK ? collateralISK : null,
       rwd:  mode === "courier" && reward         ? reward         : null,
       bud:  budget || null,
     });
-  }, [slug, sourceStationId, destStationId, shipId, mode, costPerM3, salesTax, collateralRate, reward, budget]);
+  }, [slug, sourceStationId, destStationId, shipId, mode, salesTax, collateralISK, reward, budget]);
 
   // ── If a slug is in the URL on mount, hydrate cargo from /api/appraisal ─
   // Bare `?a=<slug>` opens the Appraise tab (App.jsx); `?a=<slug>&tab=hauling`
@@ -242,9 +239,9 @@ export default function Hauling() {
         tab: "hauling", a: json.slug,
         from: String(sourceStationId), to: String(destStationId),
         ship: shipId,
-        ...(mode === "courier" ? { mode: "courier", coll: String(collateralRate), rwd: String(reward) }
-                               : { cm3: String(costPerM3) }),
-        tax: String(salesTax),
+        ...(mode === "courier"
+          ? { mode: "courier", ...(collateralISK ? { coll: String(collateralISK) } : {}), rwd: String(reward) }
+          : { tax: String(salesTax) }),
         ...(budget ? { bud: String(budget) } : {}),
       }).toString()}`;
       try { await navigator.clipboard.writeText(shareUrl); setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000); } catch {}
@@ -263,11 +260,11 @@ export default function Hauling() {
     writeStored("cargo", "");
   }
   function handleCargoOverride(val) { setCargoOverride(val); writeStored("cargo", val); }
-  function handleNumChange(setter, key) {
+  function handleNumChange(setter, storageKey) {
     return (val) => {
       const n = Math.max(0, parseFloat(val) || 0);
       setter(n);
-      writeStored(key, String(n));
+      writeStored(storageKey, String(n));
     };
   }
   function handleSourceChange(id)   { setSourceStationId(id); writeStored("from", String(id)); }
@@ -301,6 +298,7 @@ export default function Hauling() {
           effQty: 0,
           volumeTotal: null,
           sourceCostPerUnit: null,
+          destRevBase: null,
           destRevPerUnit: null,
           haulCostPerUnit: null,
           netProfitPerUnit: null,
@@ -322,22 +320,21 @@ export default function Hauling() {
       const depthLimited = capByDepth && depthCap != null && depthCap < item.quantity;
 
       const sourceCostPerUnit = item.sourceSell;
-      const destRevPerUnit    = item.destSell * (1 - salesTax / 100);
+      const destRevBase       = item.destSell;
 
       const volumeTotal       = vol * effQty;
       const sourceCostTotal   = sourceCostPerUnit * effQty;
 
-      // Haul cost is set at the trip level (see below); the per-unit slot is
-      // filled in step 2 once we know totalCargoVolume / totalCollateral.
       return {
         ...item,
         effQty,
         volumeTotal,
         sourceCostPerUnit,
-        destRevPerUnit,
+        destRevBase,
         sourceCostTotal,
         depthLimited,
         // Placeholders refined in step 2:
+        destRevPerUnit: null,
         haulCostPerUnit: null,
         netProfitPerUnit: null,
         netProfitPerM3: null,
@@ -345,35 +342,35 @@ export default function Hauling() {
         isProfitable: false,
       };
     });
-  }, [data, capByDepth, salesTax]);
+  }, [data, capByDepth]);
 
-  // ── Step 2: trip-level haul cost → re-flow through items ───────────────
-  // Self-haul: haulCostPerUnit = volumeEach × costPerM3 (independent of trip
-  // composition). Courier: collateral × rate% / qty + reward / cargoCapacity
-  // (proportional to value + flat reward spread over m³). For courier we use
-  // the SHIP'S cargo capacity (not in-cargo m³) because the reward is paid
-  // even if the hauler is half full.
+  // ── Step 2: apply sales tax and haul cost per item ─────────────────────
+  // Self-haul: no haul cost; sales tax applied to dest revenue.
+  // Courier: reward spread over cargo m³ is the only cost; no sales tax
+  // (the cargo belongs to someone else, so you don't pocket the sale proceeds).
   const items = useMemo(() => {
     return enrichedItems.map((it) => {
       if (it.volumeTotal == null) return it;
 
+      const destRevPerUnit = mode === "self"
+        ? it.destRevBase * (1 - salesTax / 100)
+        : it.destRevBase;
+
       let haulCostPerUnit;
       if (mode === "self") {
-        haulCostPerUnit = it.volumeEach * costPerM3;
+        haulCostPerUnit = 0;
       } else {
-        // Courier: collateral cost based on item value at source, plus a
-        // proportional slice of the flat reward weighted by volume.
-        const collateralCost = it.sourceCostPerUnit * (collateralRate / 100);
-        const rewardPerM3    = effectiveCargo > 0 ? reward / effectiveCargo : 0;
-        haulCostPerUnit      = collateralCost + it.volumeEach * rewardPerM3;
+        const rewardPerM3 = effectiveCargo > 0 ? reward / effectiveCargo : 0;
+        haulCostPerUnit   = it.volumeEach * rewardPerM3;
       }
 
-      const netProfitPerUnit = it.destRevPerUnit - it.sourceCostPerUnit - haulCostPerUnit;
+      const netProfitPerUnit = destRevPerUnit - it.sourceCostPerUnit - haulCostPerUnit;
       const netProfitPerM3   = netProfitPerUnit / it.volumeEach;
       const netProfitTotal   = netProfitPerUnit * it.effQty;
 
       return {
         ...it,
+        destRevPerUnit,
         haulCostPerUnit,
         netProfitPerUnit,
         netProfitPerM3,
@@ -381,7 +378,7 @@ export default function Hauling() {
         isProfitable: netProfitPerUnit > 0,
       };
     });
-  }, [enrichedItems, mode, costPerM3, collateralRate, reward, effectiveCargo]);
+  }, [enrichedItems, mode, salesTax, reward, effectiveCargo]);
 
   // ── Step 3: cargo-fill plan (greedy by net ISK/m³, capped by m³ + ISK) ─
   const cargoFillPlan = useMemo(() => {
@@ -565,13 +562,6 @@ export default function Hauling() {
         {mode === "self" ? (
           <div className={styles.costGroup}>
             <div className={styles.field}>
-              <label className={styles.label}>HAUL COST (ISK/m³)</label>
-              <input type="text" inputMode="decimal" className={styles.numInput}
-                value={costPerM3 || ""} placeholder="0"
-                onChange={(e) => handleNumChange(setCostPerM3, "costPerM3")(e.target.value)}
-                onFocus={(e) => e.target.select()} style={{ width: 130 }} />
-            </div>
-            <div className={styles.field}>
               <label className={styles.label}>SALES TAX %</label>
               <input type="text" inputMode="decimal" className={styles.numInput}
                 value={salesTax || ""} placeholder="0"
@@ -582,11 +572,12 @@ export default function Hauling() {
         ) : (
           <div className={styles.costGroup}>
             <div className={styles.field}>
-              <label className={styles.label}>COLLATERAL %</label>
+              <label className={styles.label}>COLLATERAL (ISK)</label>
               <input type="text" inputMode="decimal" className={styles.numInput}
-                value={collateralRate || ""} placeholder="1.5"
-                onChange={(e) => handleNumChange(setCollateralRate, "collateralRate")(e.target.value)}
-                onFocus={(e) => e.target.select()} />
+                value={collateralISK || ""} placeholder="0"
+                onChange={(e) => handleNumChange(setCollateralISK, "collateralISK")(e.target.value)}
+                onFocus={(e) => e.target.select()} style={{ width: 130 }}
+                title="Flat ISK collateral to set on the contract — for reference only, does not affect profit calculation." />
             </div>
             <div className={styles.field}>
               <label className={styles.label}>REWARD (ISK)</label>
@@ -594,13 +585,6 @@ export default function Hauling() {
                 value={reward || ""} placeholder="0"
                 onChange={(e) => handleNumChange(setReward, "reward")(e.target.value)}
                 onFocus={(e) => e.target.select()} style={{ width: 130 }} />
-            </div>
-            <div className={styles.field}>
-              <label className={styles.label}>SALES TAX %</label>
-              <input type="text" inputMode="decimal" className={styles.numInput}
-                value={salesTax || ""} placeholder="0"
-                onChange={(e) => handleNumChange(setSalesTax, "salesTax")(e.target.value)}
-                onFocus={(e) => e.target.select()} />
             </div>
           </div>
         )}
@@ -671,17 +655,19 @@ export default function Hauling() {
               <span className={styles.cardValue}>{fmt(cargoFillPlan.totalSourceCost)}</span>
               <span className={styles.cardSub}>at {sourceShort}</span>
             </div>
-            <div className={styles.summaryCard}>
-              <span className={styles.cardLabel}>HAUL COST</span>
-              <span className={styles.cardValue}>{fmt(cargoFillPlan.totalHaulCost)}</span>
-              <span className={styles.cardSub}>{mode === "self" ? "self-haul" : "courier"}</span>
-            </div>
+            {mode === "courier" && (
+              <div className={styles.summaryCard}>
+                <span className={styles.cardLabel}>REWARD PAID</span>
+                <span className={styles.cardValue}>{fmt(cargoFillPlan.totalHaulCost)}</span>
+                <span className={styles.cardSub}>courier reward</span>
+              </div>
+            )}
             <div className={styles.summaryCard}>
               <span className={styles.cardLabel}>TRIP PROFIT</span>
               <span className={`${styles.cardValue} ${cargoFillPlan.totalProfit >= 0 ? styles.cardValueSell : styles.danger}`}>
                 {fmt(cargoFillPlan.totalProfit)}
               </span>
-              <span className={styles.cardSub}>after tax + haul</span>
+              <span className={styles.cardSub}>{mode === "self" ? "after sales tax" : "after courier reward"}</span>
             </div>
             <div className={styles.cargoCard}>
               <span className={styles.cardLabel}>CARGO USED</span>
@@ -733,7 +719,7 @@ export default function Hauling() {
                   <th className={styles.thNum}  onClick={() => handleSort("sourceSell")}>{sourceShort.toUpperCase()} BUY {arr("sourceSell")}</th>
                   <th className={styles.thNum}  onClick={() => handleSort("destSell")}>{destShort.toUpperCase()} SELL {arr("destSell")}</th>
                   <th className={styles.thNum}  onClick={() => handleSort("destSellVolume")}>DEPTH {arr("destSellVolume")}</th>
-                  <th className={styles.thNum}  onClick={() => handleSort("haulCostPerUnit")}>HAUL {arr("haulCostPerUnit")}</th>
+                  {mode === "courier" && <th className={styles.thNum}  onClick={() => handleSort("haulCostPerUnit")}>HAUL {arr("haulCostPerUnit")}</th>}
                   <th className={styles.thNum}  onClick={() => handleSort("netProfitTotal")}>NET PROFIT {arr("netProfitTotal")}</th>
                   <th className={`${styles.thNum} ${styles.thHighlight}`} onClick={() => handleSort("netProfitPerM3")}>ISK/m³ {arr("netProfitPerM3")}</th>
                   <th className={styles.thCargo}>IN CARGO</th>
@@ -765,7 +751,7 @@ export default function Hauling() {
                       <td className={styles.tdNum}>{fmt(item.sourceSell)}</td>
                       <td className={`${styles.tdNum} ${styles.sell}`}>{fmt(item.destSell)}</td>
                       <td className={styles.tdNum}>{item.destSellVolume != null ? fmt(item.destSellVolume) : "—"}</td>
-                      <td className={styles.tdNum}>{item.haulCostPerUnit != null ? fmt(item.haulCostPerUnit) : "—"}</td>
+                      {mode === "courier" && <td className={styles.tdNum}>{item.haulCostPerUnit != null ? fmt(item.haulCostPerUnit) : "—"}</td>}
                       <td className={`${styles.tdNum} ${item.netProfitTotal != null ? (item.netProfitTotal >= 0 ? styles.sell : styles.danger) : ""}`}>
                         {item.netProfitTotal != null ? fmt(item.netProfitTotal) : "—"}
                       </td>
